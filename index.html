@@ -806,11 +806,11 @@
         #active-groups-panel .clan-topology .leaderboard-group-list { border-left: 0; }
         #active-groups-panel .clan-topology .group-card::before,
         #active-groups-panel .clan-topology .group-card::after { content: none; animation: none; }
-        .clan-connection-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 3; }
-        .clan-connection-line { fill: none; stroke: #2a352c; stroke-width: 2.2; }
-        .clan-connection-line.running { stroke: #74c59a; stroke-width: 2.4; stroke-dasharray: 6 5; animation: clanReferenceFlow 0.85s linear infinite !important; filter: drop-shadow(0 0 4px rgba(116, 197, 154, 0.6)); }
-        .clan-connection-packet { filter: drop-shadow(0 0 6px #74c59a) drop-shadow(0 0 10px rgba(116, 197, 154, 0.9)); }
-        @keyframes clanReferenceFlow { to { stroke-dashoffset: -22; } }
+        .clan-connection-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 2; }
+        .clan-connection-line { fill: none; stroke: #454a46; stroke-width: 1.75; }
+        .clan-connection-line.running { stroke: #8abd9d; stroke-dasharray: 5 5; animation: clanReferenceFlow 1.0s linear infinite !important; }
+        .clan-connection-packet { fill: #8abd9d; }
+        @keyframes clanReferenceFlow { to { stroke-dashoffset: -20; } }
         @media(prefers-reduced-motion:reduce) {
             .clan-connection-line.running { animation: none; }
             .clan-connection-packet { display: none; }
@@ -2893,102 +2893,59 @@
         svg.innerHTML = '';
 
         const clanRect = clanNode.getBoundingClientRect();
-        // Line terminates inside the clan card next to the weekly glory value
-        const clanX = Math.round(clanRect.right - mapRect.left - 18);
+        // Exact right border of clan card
+        const clanX = Math.round(clanRect.right - mapRect.left);
         const clanBaseY = Math.round((clanRect.top + clanRect.bottom) / 2 - mapRect.top);
 
         groupNodes.forEach((grpNode, idx) => {
             const isRunning = grpNode.getAttribute('data-running') === 'true';
             const grpRect = grpNode.getBoundingClientRect();
-            // Line originates inside the group card near the running activity dot
-            const grpX = Math.round(grpRect.left - mapRect.left + 22);
+            // Exact left border of group card
+            const grpX = Math.round(grpRect.left - mapRect.left);
             const grpY = Math.round((grpRect.top + grpRect.bottom) / 2 - mapRect.top);
 
-            // Stagger multiple group target points on clan node so paths do not collide
             const totalGrps = groupNodes.length;
-            const yOffset = totalGrps > 1 ? ((idx - (totalGrps - 1) / 2) * 16) : 0;
+            const yOffset = totalGrps > 1 ? ((idx - (totalGrps - 1) / 2) * 12) : 0;
             const targetClanY = Math.round(clanBaseY + yOffset);
 
             const midX = Math.round((clanX + grpX) / 2);
-            // Smooth Bezier path from Group (inside right) across corridor to Clan (inside left)
+            // Smooth Bezier path connecting this group card directly to that clan card
             const pathD = `M ${grpX} ${grpY} C ${midX} ${grpY}, ${midX} ${targetClanY}, ${clanX} ${targetClanY}`;
 
-            // Background glow track
-            const glowEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            glowEl.setAttribute('d', pathD);
-            glowEl.setAttribute('fill', 'none');
-            glowEl.setAttribute('stroke', isRunning ? 'rgba(116, 197, 154, 0.18)' : 'rgba(58, 71, 62, 0.15)');
-            glowEl.setAttribute('stroke-width', '6');
-            svg.appendChild(glowEl);
-
-            // Active dashed connecting line
+            // Clean connecting dashed line (No neon)
             const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             pathEl.setAttribute('d', pathD);
             pathEl.setAttribute('class', isRunning ? 'clan-connection-line running' : 'clan-connection-line');
             svg.appendChild(pathEl);
 
-            // Sender port indicator inside group node
-            const grpPort = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            grpPort.setAttribute('cx', grpX);
-            grpPort.setAttribute('cy', grpY);
-            grpPort.setAttribute('r', '4');
-            grpPort.setAttribute('fill', isRunning ? '#74c59a' : '#454a46');
-            grpPort.setAttribute('stroke', '#191b19');
-            grpPort.setAttribute('stroke-width', '1.5');
-            svg.appendChild(grpPort);
-
-            // Receiver port indicator inside clan node
-            const clanPort = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            clanPort.setAttribute('cx', clanX);
-            clanPort.setAttribute('cy', targetClanY);
-            clanPort.setAttribute('r', '4');
-            clanPort.setAttribute('fill', isRunning ? '#74c59a' : '#454a46');
-            clanPort.setAttribute('stroke', '#191b19');
-            clanPort.setAttribute('stroke-width', '1.5');
-            svg.appendChild(clanPort);
-
             if (isRunning) {
-                // Outer pulse ring at clan port receiver
-                const clanRing = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                clanRing.setAttribute('cx', clanX);
-                clanRing.setAttribute('cy', targetClanY);
-                clanRing.setAttribute('r', '7');
-                clanRing.setAttribute('fill', 'none');
-                clanRing.setAttribute('stroke', '#74c59a');
-                clanRing.setAttribute('stroke-width', '1.2');
-                clanRing.setAttribute('opacity', '0.6');
-                svg.appendChild(clanRing);
+                // Exactly 1 clean green particle every 1 second (dur=1.0s) like real web
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('class', 'clan-connection-packet');
+                circle.setAttribute('r', '3.5');
+                circle.setAttribute('fill', '#8abd9d');
 
-                // Continuous stream of 3 glowing data packets traveling along the full path
-                for (let pIdx = 0; pIdx < 3; pIdx++) {
-                    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                    circle.setAttribute('class', 'clan-connection-packet');
-                    circle.setAttribute('r', '3.5');
-                    circle.setAttribute('fill', '#8ef0bb');
-                    circle.setAttribute('opacity', '0');
+                const dur = 1.0;
+                const delay = (idx * 0.25).toFixed(2);
 
-                    const dur = 2.0;
-                    const delay = (idx * 0.35 + pIdx * 0.65).toFixed(2);
+                const animOpacity = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+                animOpacity.setAttribute('attributeName', 'opacity');
+                animOpacity.setAttribute('dur', `${dur}s`);
+                animOpacity.setAttribute('begin', `${delay}s`);
+                animOpacity.setAttribute('repeatCount', 'indefinite');
+                animOpacity.setAttribute('values', '0;1;1;0');
+                animOpacity.setAttribute('keyTimes', '0;0.05;0.95;1');
+                circle.appendChild(animOpacity);
 
-                    const animOpacity = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
-                    animOpacity.setAttribute('attributeName', 'opacity');
-                    animOpacity.setAttribute('dur', `${dur}s`);
-                    animOpacity.setAttribute('begin', `${delay}s`);
-                    animOpacity.setAttribute('repeatCount', 'indefinite');
-                    animOpacity.setAttribute('values', '0;1;1;0.9;0');
-                    animOpacity.setAttribute('keyTimes', '0;0.08;0.88;0.96;1');
-                    circle.appendChild(animOpacity);
+                const animMotion = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
+                animMotion.setAttribute('dur', `${dur}s`);
+                animMotion.setAttribute('begin', `${delay}s`);
+                animMotion.setAttribute('repeatCount', 'indefinite');
+                animMotion.setAttribute('path', pathD);
+                animMotion.setAttribute('calcMode', 'linear');
+                circle.appendChild(animMotion);
 
-                    const animMotion = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
-                    animMotion.setAttribute('dur', `${dur}s`);
-                    animMotion.setAttribute('begin', `${delay}s`);
-                    animMotion.setAttribute('repeatCount', 'indefinite');
-                    animMotion.setAttribute('path', pathD);
-                    animMotion.setAttribute('calcMode', 'linear');
-                    circle.appendChild(animMotion);
-
-                    svg.appendChild(circle);
-                }
+                svg.appendChild(circle);
             }
         });
     }
