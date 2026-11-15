@@ -697,12 +697,14 @@ def serve_sitemap():
 </urlset>"""
     return Response(xml_content, mimetype="application/xml")
 
+# Block public zip and source downloads
 @app.route("/download")
 @app.route("/download.zip")
 @app.route("/download/project.zip")
 @app.route("/ffglory_backup.zip")
-def download_backup_zip():
-    return send_from_directory(BASE_DIR, "ffglory_backup.zip", as_attachment=True, download_name="ffglory_project.zip")
+@app.route("/<path:path>.zip")
+def block_zip_downloads(path=None):
+    return jsonify({"error": "Not found"}), 404
 
 # ==================== AUTHENTICATION (SQLITE) ====================
 
