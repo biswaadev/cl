@@ -286,19 +286,10 @@ def fetch_and_sync_groups(user_id=None, is_admin=False):
                 """, (gid, user_id or 1, cid, cname, region, status, glory, uptime, squad_json))
         conn.commit()
 
-    # 3. Determine which groups to return to the caller
+    # 3. Determine which groups to return to the caller (fetch & show all live groups directly from API)
     formatted_groups = []
     if up_status == 200 and isinstance(up_groups, list):
-        if is_admin:
-            target_gids = set(live_map.keys())
-        else:
-            c.execute("SELECT group_id FROM groups WHERE user_id = ?", (user_id,))
-            target_gids = set(r["group_id"] for r in c.fetchall())
-
         for gid, live in live_map.items():
-            if not is_admin and gid not in target_gids:
-                continue
-
             cid = str(live.get("clan_id") or "")
             if cid == "3107000439":
                 clan_name = "ɪɴᴅɪᴀ⠏ᴛᴏᴘ❶"
