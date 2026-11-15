@@ -14,7 +14,7 @@ import threading
 import secrets
 from collections import defaultdict
 from functools import wraps
-from flask import Flask, request, jsonify, send_from_directory, session, redirect
+from flask import Flask, request, jsonify, send_from_directory, session, redirect, Response
 from db import get_db, hash_password, init_db
 
 app = Flask(__name__, static_folder='.', static_url_path='')
@@ -585,7 +585,9 @@ def get_admin_dashboard_state():
 @app.route("/dashboard")
 def serve_index():
     if "user_id" not in session:
-        return redirect("/login")
+        if request.path == "/dashboard":
+            return redirect("/login")
+        return send_from_directory(BASE_DIR, "login.html")
     user_id = session.get("user_id")
     state = get_user_dashboard_state(user_id)
     if not state:
@@ -601,6 +603,10 @@ def serve_index():
     injection = f'<script id="__SYS_SYNC__">window.__INITIAL_SYNC__="{state_b64}";</script>'
     html = html.replace("</head>", f"{injection}\n</head>")
     return html
+
+@app.route("/google<verification_id>.html")
+def google_verification_file(verification_id):
+    return f"google-site-verification: google{verification_id}.html", 200, {"Content-Type": "text/html"}
 
 @app.route("/login")
 @app.route("/login.html")
@@ -659,6 +665,37 @@ def serve_clan_png():
 @app.route("/assets/<path:path>")
 def serve_assets(path):
     return send_from_directory(os.path.join(BASE_DIR, "assets"), path)
+
+@app.route("/robots.txt")
+def serve_robots():
+    base_url = request.host_url.rstrip("/")
+    content = f"""User-agent: *
+Allow: /
+Allow: /login
+Disallow: /admin
+Disallow: /api/
+
+Sitemap: {base_url}/sitemap.xml
+"""
+    return Response(content, mimetype="text/plain")
+
+@app.route("/sitemap.xml")
+def serve_sitemap():
+    base_url = request.host_url.rstrip("/")
+    xml_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>{base_url}/</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>{base_url}/login</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+</urlset>"""
+    return Response(xml_content, mimetype="application/xml")
 
 @app.route("/download")
 @app.route("/download.zip")
