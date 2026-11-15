@@ -1712,7 +1712,7 @@ def admin_toggle_ban():
         conn.close()
         return jsonify({"error": "User not found"}), 404
 
-    if user["role"] == "admin" and user["username"] == "admin":
+    if (user["role"] == "admin" and user["username"] == "admin") or user["id"] == 1:
         conn.close()
         return jsonify({"error": "Cannot ban master admin."}), 400
 
@@ -1747,6 +1747,78 @@ def admin_reset_password():
 
     return jsonify({"success": True, "message": "User password has been successfully reset!"})
 
+@app.route("/api/admin/update-credentials", methods=["POST"])
+def admin_update_credentials():
+    if not require_admin():
+        return jsonify({"error": "Admin access required."}), 403
+
+    user_id = session.get("user_id")
+    session_username = session.get("username")
+    data = request.get_json(silent=True) or request.form.to_dict()
+
+    current_pw = (data.get("current_password") or "").strip()
+    new_username = (data.get("new_username") or "").strip()
+    new_pw = (data.get("new_password") or "").strip()
+
+    if not current_pw:
+        return jsonify({"error": "Current password is required to authorize changes."}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    if user_id:
+        c.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    else:
+        c.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(?)", (session_username or "admin",))
+    admin_user = c.fetchone()
+
+    if not admin_user:
+        conn.close()
+        return jsonify({"error": "Admin account not found."}), 404
+
+    if admin_user["password_hash"] != hash_password(current_pw):
+        conn.close()
+        return jsonify({"error": "Current password is incorrect."}), 401
+
+    updates = []
+    params = []
+
+    if new_username and new_username.lower() != admin_user["username"].lower():
+        if len(new_username) < 3:
+            conn.close()
+            return jsonify({"error": "Username must be at least 3 characters long."}), 400
+        # Check uniqueness
+        c.execute("SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND id != ?", (new_username, admin_user["id"]))
+        if c.fetchone():
+            conn.close()
+            return jsonify({"error": f"Username '{new_username}' is already in use."}), 409
+        updates.append("username = ?")
+        params.append(new_username)
+
+    if new_pw:
+        if len(new_pw) < 4:
+            conn.close()
+            return jsonify({"error": "New password must be at least 4 characters long."}), 400
+        updates.append("password_hash = ?")
+        params.append(hash_password(new_pw))
+
+    if not updates:
+        conn.close()
+        return jsonify({"error": "Please provide a new username or new password to update."}), 400
+
+    params.append(admin_user["id"])
+    c.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", tuple(params))
+    conn.commit()
+
+    final_username = new_username if new_username else admin_user["username"]
+    session["username"] = final_username
+    conn.close()
+
+    return jsonify({
+        "success": True,
+        "message": "Admin credentials updated successfully! Use your new details next time you log in.",
+        "username": final_username
+    })
+
 @app.route("/api/admin/user/toggle-role", methods=["POST"])
 def admin_toggle_role():
     if not require_admin():
@@ -1767,7 +1839,7 @@ def admin_toggle_role():
         conn.close()
         return jsonify({"error": "User not found"}), 404
 
-    if user["username"] == "admin" and target_role != "admin":
+    if (user["username"] == "admin" or user["id"] == 1) and target_role != "admin":
         conn.close()
         return jsonify({"error": "Cannot demote primary admin."}), 400
 

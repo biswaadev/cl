@@ -1438,6 +1438,58 @@
                         </div>
                     </form>
                 </div>
+
+                <!-- Admin Security: Change Admin Username & Password -->
+                <div class="ng-card p-6 border border-[var(--ui-border)] max-w-2xl mt-5">
+                    <div class="flex items-center justify-between pb-4 border-b border-gray-800 mb-5 flex-wrap gap-2">
+                        <div>
+                            <h3 class="font-['Rajdhani'] font-bold text-2xl text-white flex items-center gap-2">
+                                <span class="px-2.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/40">Security</span>
+                                <span>Change Admin Username &amp; Password</span>
+                            </h3>
+                            <p class="text-xs text-gray-400 mt-1">Update your admin login username and password. Current password is required to authorize changes.</p>
+                        </div>
+                        <div id="admin-current-user-badge" class="px-3 py-1 rounded bg-[var(--ui-inset)] border border-[var(--ui-border)] text-xs text-gray-300">
+                            Logged in as: <strong class="text-amber-300 font-mono" id="admin-active-user-name">admin</strong>
+                        </div>
+                    </div>
+
+                    <form onsubmit="adminUpdateCredentials(event)" class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="ng-form-label text-xs">New Admin Username</label>
+                                <input type="text" id="setting-admin-username" placeholder="Leave blank to keep current" class="ng-input text-xs font-mono">
+                                <p class="text-[10px] text-gray-500 mt-1">Minimum 3 characters. Must be unique.</p>
+                            </div>
+                            <div>
+                                <label class="ng-form-label text-xs">Current Password <span class="text-amber-400">*</span></label>
+                                <input type="password" id="setting-admin-current-pw" placeholder="Enter current admin password" class="ng-input text-xs" required autocomplete="current-password">
+                                <p class="text-[10px] text-gray-500 mt-1">Required to verify your authorization.</p>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="ng-form-label text-xs">New Password</label>
+                                <input type="password" id="setting-admin-new-pw" placeholder="Leave blank to keep current" class="ng-input text-xs" autocomplete="new-password">
+                                <p class="text-[10px] text-gray-500 mt-1">Minimum 4 characters.</p>
+                            </div>
+                            <div>
+                                <label class="ng-form-label text-xs">Confirm New Password</label>
+                                <input type="password" id="setting-admin-confirm-pw" placeholder="Re-enter new password" class="ng-input text-xs" autocomplete="new-password">
+                                <p class="text-[10px] text-gray-500 mt-1">Must match new password.</p>
+                            </div>
+                        </div>
+
+                        <div class="pt-2 flex items-center gap-3">
+                            <button type="submit" id="btn-save-admin-creds" class="ng-btn-primary px-6 py-2.5 text-xs font-bold flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                                <span>🔒 Update Admin Credentials</span>
+                            </button>
+                            <span id="admin-creds-status" class="text-xs font-medium hidden"></span>
+                        </div>
+                    </form>
+                </div>
             </div>
 
             <!-- Admin Section: Broadcast Alert -->
@@ -1508,7 +1560,8 @@
         adminApproveOrder: '/api/admin/approve-order',
         adminRejectOrder: '/api/admin/reject-order',
         adminSaveSettings: '/api/admin/save-settings',
-        adminBroadcast: '/api/admin/broadcast-alert'
+        adminBroadcast: '/api/admin/broadcast-alert',
+        adminUpdateCredentials: '/api/admin/update-credentials'
     };
 
     let allAdminUsers = [];
@@ -2098,6 +2151,18 @@
                 if (waEl) waEl.value = cData.whatsapp || '6282326562316';
                 if (tgEl) tgEl.value = cData.telegram || 'ff_level_pro';
             }
+
+            // Load current admin username
+            try {
+                const meRes = await fetch(API.me);
+                const meData = await meRes.json();
+                if (meData && meData.username) {
+                    const activeNameEl = document.getElementById('admin-active-user-name');
+                    if (activeNameEl) activeNameEl.textContent = meData.username;
+                    const uInput = document.getElementById('setting-admin-username');
+                    if (uInput) uInput.placeholder = `Current: ${meData.username} (type new to change)`;
+                }
+            } catch(e) {}
         } catch(e) {}
     }
 
@@ -2236,6 +2301,89 @@
             if (btn) {
                 btn.disabled = false;
                 btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> <span>💾 Save WhatsApp &amp; Telegram</span>`;
+            }
+        }
+    }
+
+    async function adminUpdateCredentials(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        const newUsername = (document.getElementById('setting-admin-username')?.value || '').trim();
+        const currentPw = document.getElementById('setting-admin-current-pw')?.value || '';
+        const newPw = document.getElementById('setting-admin-new-pw')?.value || '';
+        const confirmPw = document.getElementById('setting-admin-confirm-pw')?.value || '';
+        const btn = document.getElementById('btn-save-admin-creds');
+        const status = document.getElementById('admin-creds-status');
+
+        if (!currentPw) {
+            showToast('Current admin password is required to authorize changes!', 'error');
+            return;
+        }
+        if (!newUsername && !newPw) {
+            showToast('Please provide a new username or new password to update.', 'error');
+            return;
+        }
+        if (newPw) {
+            if (newPw.length < 4) {
+                showToast('New password must be at least 4 characters long.', 'error');
+                return;
+            }
+            if (newPw !== confirmPw) {
+                showToast('New password and Confirm password do not match!', 'error');
+                return;
+            }
+        }
+        if (newUsername && newUsername.length < 3) {
+            showToast('New username must be at least 3 characters long.', 'error');
+            return;
+        }
+
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = `<svg class="w-4 h-4 animate-spin inline-block mr-1" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg> Updating...`;
+        }
+
+        try {
+            const res = await fetch(API.adminUpdateCredentials, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    current_password: currentPw,
+                    new_username: newUsername,
+                    new_password: newPw
+                })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showToast(data.message || 'Admin credentials updated successfully!', 'success');
+                if (document.getElementById('setting-admin-current-pw')) document.getElementById('setting-admin-current-pw').value = '';
+                if (document.getElementById('setting-admin-new-pw')) document.getElementById('setting-admin-new-pw').value = '';
+                if (document.getElementById('setting-admin-confirm-pw')) document.getElementById('setting-admin-confirm-pw').value = '';
+                if (data.username) {
+                    const activeNameEl = document.getElementById('admin-active-user-name');
+                    if (activeNameEl) activeNameEl.textContent = data.username;
+                    const uInput = document.getElementById('setting-admin-username');
+                    if (uInput) {
+                        uInput.placeholder = `Current: ${data.username} (type new to change)`;
+                        uInput.value = '';
+                    }
+                }
+                if (status) {
+                    status.textContent = '✓ Saved successfully!';
+                    status.className = 'text-xs text-emerald-400 font-medium inline-block';
+                    setTimeout(() => { status.className = 'text-xs font-medium hidden'; }, 4000);
+                }
+                if (typeof loadAdminUsers === 'function') {
+                    loadAdminUsers();
+                }
+            } else {
+                showToast(data.error || 'Failed to update credentials', 'error');
+            }
+        } catch(err) {
+            showToast('Network error while updating admin credentials', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg> <span>🔒 Update Admin Credentials</span>`;
             }
         }
     }
