@@ -207,11 +207,11 @@ def parse_runtime_minutes(created_at_val, uptime_val):
 
 _GLORY_CACHE = {}
 
-def get_cached_group_glory(gid):
+def get_cached_group_glory(gid, force_refresh=False):
     now = time.time()
     gid_str = str(gid)
     cached = _GLORY_CACHE.get(gid_str)
-    if cached and (now - cached["ts"] < 20):
+    if not force_refresh and cached and (now - cached["ts"] < 5):
         return cached["total_glory"], cached["details"]
     try:
         st, res = call_upstream("POST", "/api/client/group-action", json_data={"action": "get-glory", "group_id": gid_str})
@@ -226,10 +226,11 @@ def get_cached_group_glory(gid):
         return cached["total_glory"], cached["details"]
     return 0, []
 
-def fetch_and_sync_groups(user_id=None, is_admin=False):
+def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
     """
     Fetches running groups directly from ffglory.pro API.
     Auto-updates SQLite DB 'groups' table for admin tracking.
+    Enforces STRICT user isolation: Users only see groups launched by their own account.
     Returns live formatted groups for frontend.
     """
     up_status, up_groups = call_upstream("GET", "/api/client/my-groups")
@@ -255,7 +256,7 @@ def fetch_and_sync_groups(user_id=None, is_admin=False):
             region = str(live.get("region") or "BD").upper()
             status = live.get("status") or "running"
             
-            real_glory, real_details = get_cached_group_glory(gid)
+            real_glory, real_details = get_cached_group_glory(gid, force_refresh=force_refresh)
             glory = real_glory if real_glory > 0 else (live.get("glory_farmed") or live.get("glory_gained") or 0)
             uptime = live.get("uptime") or "Active"
             games = live.get("games_played") or 0
@@ -286,10 +287,23 @@ def fetch_and_sync_groups(user_id=None, is_admin=False):
                 """, (gid, user_id or 1, cid, cname, region, status, glory, uptime, squad_json))
         conn.commit()
 
-    # 3. Determine which groups to return to the caller (fetch & show all live groups directly from API)
+    # 3. Determine which groups to return to the caller (STRICT USER ISOLATION)
     formatted_groups = []
     if up_status == 200 and isinstance(up_groups, list):
+        if is_admin:
+            target_gids = set(str(k) for k in live_map.keys())
+        else:
+            if not user_id:
+                target_gids = set()
+            else:
+                c.execute("SELECT group_id FROM groups WHERE user_id = ?", (user_id,))
+                target_gids = set(str(r["group_id"]) for r in c.fetchall())
+
         for gid, live in live_map.items():
+            # STRICT ISOLATION: A user ONLY sees the bots launched by their own account!
+            if not is_admin and str(gid) not in target_gids:
+                continue
+
             cid = str(live.get("clan_id") or "")
             if cid == "3107000439":
                 clan_name = "ɪɴᴅɪᴀ⠏ᴛᴏᴘ❶"
@@ -310,7 +324,7 @@ def fetch_and_sync_groups(user_id=None, is_admin=False):
                 members = live.get("members") or "21/20"
                 clan_level = live.get("clan_level") or 4
 
-            real_glory, real_details = get_cached_group_glory(gid)
+            real_glory, real_details = get_cached_group_glory(gid, force_refresh=force_refresh)
             squad = real_details if real_details else (live.get("details") or live.get("squad") or [])
             if not squad:
                 c.execute("SELECT squad_json, glory_gained FROM groups WHERE group_id = ?", (gid,))
@@ -408,7 +422,7 @@ def get_user_dashboard_state(user_id):
     conn.close()
 
     is_admin = user_data.get("role") == "admin"
-    groups = fetch_and_sync_groups(user_id=user_id, is_admin=is_admin)
+    groups = fetch_and_sync_groups(user_id=user_id, is_admin=is_admin, force_refresh=True)
 
     conn = get_db()
     c = conn.cursor()
@@ -783,7 +797,7 @@ def get_my_groups():
         return jsonify([]), 200
 
     is_admin = session.get("role") == "admin"
-    groups = fetch_and_sync_groups(user_id=user_id, is_admin=is_admin)
+    groups = fetch_and_sync_groups(user_id=user_id, is_admin=is_admin, force_refresh=True)
     return jsonify(groups)
 
 @app.route("/api/client/auto-clan-group", methods=["POST"])

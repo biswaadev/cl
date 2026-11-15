@@ -3771,7 +3771,7 @@
 
     async function loadMyGroups() {
         try {
-            const res = await fetch(API.myGroups);
+            const res = await fetch(API.myGroups + '?_t=' + Date.now());
             const groups = await res.json();
             renderGroups(groups);
         } catch (e) {}
