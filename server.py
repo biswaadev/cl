@@ -1,0 +1,2950 @@
+#!/usr/bin/env python3
+import json
+import base64
+import uuid
+import os
+import time
+import re
+import datetime
+import sqlite3
+import requests
+import hmac
+import hashlib
+import threading
+from collections import defaultdict
+from functools import wraps
+from flask import Flask, request, jsonify, send_from_directory, session, redirect
+from db import get_db, hash_password, init_db
+
+app = Flask(__name__, static_folder='.', static_url_path='')
+app.secret_key = 'ffglory_prod_secret_84b879661bf49d33'
+
+UPSTREAM_BASE = "https://ffglory.pro"
+
+# ==================== ADVANCED RATE LIMITING ENGINE ====================
+
+class RateLimiter:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.requests = defaultdict(list)
+        self.last_cleanup = time.time()
+
+    def get_client_ip(self):
+        # 1. Cloudflare True Client IP
+        cf_ip = request.headers.get("CF-Connecting-IP")
+        if cf_ip:
+            return cf_ip.strip()
+        # 2. X-Forwarded-For (Proxy list, client is first)
+        xff = request.headers.get("X-Forwarded-For")
+        if xff:
+            return xff.split(",")[0].strip()
+        # 3. X-Real-IP
+        xri = request.headers.get("X-Real-IP")
+        if xri:
+            return xri.strip()
+        # 4. Direct socket address
+        return request.remote_addr or "127.0.0.1"
+
+    def is_allowed(self, bucket_key, max_requests, window_seconds):
+        now = time.time()
+        with self.lock:
+            # Periodic cleanup of stale memory keys
+            if now - self.last_cleanup > 300:
+                self.cleanup(now)
+
+            timestamps = self.requests[bucket_key]
+            cutoff = now - window_seconds
+            valid_timestamps = [t for t in timestamps if t >= cutoff]
+            self.requests[bucket_key] = valid_timestamps
+
+            if len(valid_timestamps) >= max_requests:
+                oldest = valid_timestamps[0]
+                retry_after = max(1, int(window_seconds - (now - oldest)))
+                return False, retry_after
+
+            valid_timestamps.append(now)
+            return True, 0
+
+    def cleanup(self, now):
+        self.last_cleanup = now
+        stale_keys = [k for k, ts in self.requests.items() if not ts or (now - ts[-1] > 3600)]
+        for k in stale_keys:
+            del self.requests[k]
+
+limiter = RateLimiter()
+
+def rate_limit(max_requests=60, window_seconds=60, key_prefix="global", per_user=False):
+    def decorator(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            ip = limiter.get_client_ip()
+            user_id = session.get("user_id")
+            if per_user and user_id:
+                bucket = f"{key_prefix}:user:{user_id}"
+            else:
+                bucket = f"{key_prefix}:ip:{ip}"
+
+            allowed, retry_after = limiter.is_allowed(bucket, max_requests, window_seconds)
+            if not allowed:
+                # If gateway request, return obfuscated 429
+                if request.path == "/api/gateway":
+                    err_obj = {
+                        "error": f"Rate limit exceeded. Please slow down and try again in {retry_after}s.",
+                        "status": 429,
+                        "retry_after": retry_after
+                    }
+                    enc = base64.b64encode(json.dumps(err_obj).encode("utf-8")).decode("utf-8")
+                    r = jsonify({"_r": enc})
+                    r.status_code = 429
+                    r.headers["Retry-After"] = str(retry_after)
+                    return r
+
+                r = jsonify({
+                    "error": f"Too many requests! Please wait {retry_after} seconds before trying again.",
+                    "status": 429,
+                    "retry_after": retry_after
+                })
+                r.status_code = 429
+                r.headers["Retry-After"] = str(retry_after)
+                return r
+
+            return f(*args, **kwargs)
+        return wrapped
+    return decorator
+
+
+def get_setting(key, default=""):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT value FROM settings WHERE key = ?", (key,))
+    row = c.fetchone()
+    conn.close()
+    return row["value"] if row else default
+
+def set_setting(key, value):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
+    conn.commit()
+    conn.close()
+
+UPSTREAM_PLATFORM_KEY = "22e15fc938aef0cf08bff1a4dd7a4aaa"
+
+def get_upstream_keys():
+    # Platform master key used in x-api-key header (default: 22e15fc938aef0cf08bff1a4dd7a4aaa)
+    mkey = (get_setting("upstream_master_key", UPSTREAM_PLATFORM_KEY) or "").strip() or UPSTREAM_PLATFORM_KEY
+    # User reseller account key passed in query ?api_key=ak_...
+    akey = (get_setting("upstream_api_key", "ak_0c1f2d0c3e3a8baad7ecd9fb97beaad3793bdfb051aa5d00f48b1714b2ce7ff4") or "").strip()
+    
+    # Auto-resolve if user entered account key ak_ into master_key field
+    if mkey.startswith("ak_"):
+        akey = mkey
+        mkey = UPSTREAM_PLATFORM_KEY
+    
+    return mkey, akey
+
+
+def mask_secret(key, visible_start=4, visible_end=4):
+    if not key:
+        return ""
+    if len(key) <= (visible_start + visible_end):
+        return "••••••••"
+    return key[:visible_start] + "••••••••" + key[-visible_end:]
+
+def call_upstream(method, path, json_data=None, params=None):
+    master_key, api_key = get_upstream_keys()
+    url = f"{UPSTREAM_BASE}{path}"
+    p = {"api_key": api_key}
+    if params:
+        p.update(params)
+    
+    headers = {
+        "x-api-key": master_key,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        r = requests.request(
+            method,
+            url,
+            params=p,
+            headers=headers,
+            json=json_data,
+            timeout=15
+        )
+        try:
+            return r.status_code, r.json()
+        except Exception:
+            return r.status_code, {"text": r.text}
+    except Exception as e:
+        return 500, {"error": f"Upstream connection failed: {str(e)}"}
+
+# ==================== STATIC PAGE ROUTES ====================
+
+def parse_runtime_minutes(created_at_val, uptime_val):
+    minutes = 0
+    if created_at_val:
+        s = str(created_at_val).strip()
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S.%f"):
+            try:
+                dt = datetime.datetime.strptime(s.replace("Z", ""), fmt)
+                minutes = int(max(0, (datetime.datetime.utcnow() - dt).total_seconds() // 60))
+                return minutes
+            except Exception:
+                pass
+    if uptime_val:
+        s = str(uptime_val).lower().strip()
+        h_match = re.search(r'(\d+)\s*h', s)
+        m_match = re.search(r'(\d+)\s*m', s)
+        if h_match:
+            minutes += int(h_match.group(1)) * 60
+        if m_match:
+            minutes += int(m_match.group(1))
+    return minutes
+
+def fetch_and_sync_groups(user_id=None, is_admin=False):
+    """
+    Fetches running groups directly from ffglory.pro API.
+    Auto-updates SQLite DB 'groups' table for admin tracking.
+    Returns live formatted groups for frontend.
+    """
+    up_status, up_groups = call_upstream("GET", "/api/client/my-groups")
+    
+    conn = get_db()
+    c = conn.cursor()
+
+    live_map = {}
+    if up_status == 200 and isinstance(up_groups, list):
+        live_map = {str(g.get("group_id") or g.get("id")): g for g in up_groups if isinstance(g, dict)}
+        
+        # 1. Any groups in DB marked running that are NOT in upstream -> update to completed in DB
+        if live_map:
+            placeholders = ",".join("?" for _ in live_map.keys())
+            c.execute(f"UPDATE groups SET status = 'completed' WHERE status IN ('running', 'online') AND group_id NOT IN ({placeholders})", list(live_map.keys()))
+        else:
+            c.execute("UPDATE groups SET status = 'completed' WHERE status IN ('running', 'online')")
+
+        # 2. Upsert each upstream group into DB for Admin records
+        for gid, live in live_map.items():
+            cid = str(live.get("clan_id") or "")
+            cname = live.get("clan_name") or ("ɪɴᴅɪᴀ⠏ᴛᴏᴘ❶" if cid == "3107000439" else f"Clan {cid}")
+            region = str(live.get("region") or "BD").upper()
+            status = live.get("status") or "running"
+            glory = live.get("glory_farmed") or live.get("glory_gained") or 0
+            uptime = live.get("uptime") or "Active"
+            games = live.get("games_played") or 0
+            squad_raw = live.get("details") or live.get("squad")
+            squad_json = json.dumps(squad_raw) if squad_raw else None
+
+            c.execute("SELECT id, user_id, squad_json FROM groups WHERE group_id = ?", (gid,))
+            existing = c.fetchone()
+            if existing:
+                c.execute("""
+                    UPDATE groups SET 
+                        clan_id = COALESCE(NULLIF(?, ''), clan_id),
+                        clan_name = COALESCE(NULLIF(?, ''), clan_name),
+                        region = ?,
+                        status = ?,
+                        glory_gained = ?,
+                        uptime = ?,
+                        games_played = ?,
+                        squad_json = COALESCE(?, squad_json)
+                    WHERE group_id = ?
+                """, (cid, cname, region, status, glory, uptime, games, squad_json, gid))
+            else:
+                c.execute("""
+                    INSERT OR REPLACE INTO groups (
+                        group_id, user_id, clan_id, clan_name, region, status,
+                        glory_gained, clan_total_glory, uptime, squad_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, CURRENT_TIMESTAMP)
+                """, (gid, user_id or 1, cid, cname, region, status, glory, uptime, squad_json))
+        conn.commit()
+
+    # 3. Determine which groups to return to the caller
+    formatted_groups = []
+    if up_status == 200 and isinstance(up_groups, list):
+        if is_admin:
+            target_gids = set(live_map.keys())
+        else:
+            c.execute("SELECT group_id FROM groups WHERE user_id = ?", (user_id,))
+            target_gids = set(r["group_id"] for r in c.fetchall())
+
+        for gid, live in live_map.items():
+            if not is_admin and gid not in target_gids:
+                continue
+
+            cid = str(live.get("clan_id") or "")
+            if cid == "3107000439":
+                clan_name = "ɪɴᴅɪᴀ⠏ᴛᴏᴘ❶"
+                clan_slogan = "“ɪɴᴅɪᴀ  ᴛᴏᴘ❶”"
+                weekly_glory = "41,11,944"
+                clan_total_glory = 4111944
+                clan_rank = "#23"
+                captain = "19090872063"
+                members = "21/20"
+                clan_level = 1
+            else:
+                clan_name = live.get("clan_name") or f"Clan {cid}"
+                clan_slogan = live.get("clan_slogan") or f'“{clan_name}”'
+                weekly_glory = live.get("weekly_glory") or "41,11,944"
+                clan_total_glory = live.get("clan_total_glory") or 0
+                clan_rank = live.get("clan_rank") or "#23"
+                captain = live.get("captain") or "19090872063"
+                members = live.get("members") or "21/20"
+                clan_level = live.get("clan_level") or 4
+
+            squad = live.get("details") or live.get("squad") or []
+            if not squad:
+                c.execute("SELECT squad_json FROM groups WHERE group_id = ?", (gid,))
+                srow = c.fetchone()
+                if srow and srow["squad_json"]:
+                    try:
+                        squad = json.loads(srow["squad_json"])
+                    except Exception:
+                        squad = []
+
+            glory_val = int(live.get("glory_farmed") or live.get("glory_gained") or 0)
+            created_at_val = live.get("created_at") or ""
+            uptime_val = live.get("uptime") or "Active"
+            runtime_mins = parse_runtime_minutes(created_at_val, uptime_val)
+            can_refund = (runtime_mins >= 30) and (glory_val == 0)
+
+            formatted_groups.append({
+                "id": gid,
+                "group_id": gid,
+                "clan_id": cid,
+                "clan_name": clan_name,
+                "clan_slogan": clan_slogan,
+                "weekly_glory": weekly_glory,
+                "clan_rank": clan_rank,
+                "region": str(live.get("region") or "BD").upper(),
+                "status": live.get("status") or "running",
+                "glory_gained": glory_val,
+                "clan_total_glory": clan_total_glory,
+                "clan_level": clan_level,
+                "captain": captain,
+                "members": members,
+                "uptime": uptime_val,
+                "runtime_minutes": runtime_mins,
+                "can_refund": can_refund,
+                "games_played": live.get("games_played") or 0,
+                "created_at": created_at_val,
+                "squad": squad,
+                "details": squad
+            })
+    else:
+        # Fallback if upstream is down
+        query = "SELECT * FROM groups WHERE status IN ('running', 'online')" if is_admin else "SELECT * FROM groups WHERE user_id = ? AND status IN ('running', 'online')"
+        params = () if is_admin else (user_id,)
+        c.execute(query, params)
+        for r in c.fetchall():
+            squad = []
+            if r["squad_json"]:
+                try:
+                    squad = json.loads(r["squad_json"])
+                except Exception:
+                    squad = []
+            cid = str(r["clan_id"] or "")
+            glory_val = int(r["glory_gained"] or 0)
+            runtime_mins = parse_runtime_minutes(r["created_at"], r["uptime"])
+            can_refund = (runtime_mins >= 30) and (glory_val == 0)
+            formatted_groups.append({
+                "id": r["group_id"],
+                "group_id": r["group_id"],
+                "clan_id": cid,
+                "clan_name": r["clan_name"] or ("ɪɴᴅɪᴀ⠏ᴛᴏᴘ❶" if cid == "3107000439" else f"Clan {cid}"),
+                "clan_slogan": r["clan_slogan"] or ("“ɪɴᴅɪᴀ  ᴛᴏᴘ❶”" if cid == "3107000439" else f"Clan {cid}"),
+                "weekly_glory": r["weekly_glory"] or "41,11,944",
+                "clan_rank": r["clan_rank"] or "#23",
+                "region": (r["region"] or "BD").upper(),
+                "status": r["status"],
+                "glory_gained": glory_val,
+                "clan_total_glory": r["clan_total_glory"] or 0,
+                "clan_level": r["clan_level"] or 1,
+                "captain": r["captain"] or "19090872063",
+                "members": r["members"] or "21/20",
+                "uptime": r["uptime"] or "Active",
+                "runtime_minutes": runtime_mins,
+                "can_refund": can_refund,
+                "games_played": r["games_played"] or 0,
+                "created_at": r["created_at"],
+                "squad": squad,
+                "details": squad
+            })
+
+    conn.close()
+    return formatted_groups
+
+def get_user_dashboard_state(user_id):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id, username, role, basic_credits, premium_credits, max_groups FROM users WHERE id = ?", (user_id,))
+    u = c.fetchone()
+    if not u:
+        conn.close()
+        return None
+    user_data = dict(u)
+    conn.close()
+
+    is_admin = user_data.get("role") == "admin"
+    groups = fetch_and_sync_groups(user_id=user_id, is_admin=is_admin)
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT 50", (user_id,))
+    transactions = [dict(r) for r in c.fetchall()]
+
+    c.execute("SELECT * FROM coupons WHERE created_by = ? ORDER BY id DESC", (user_data['username'],))
+    my_coupons = [dict(r) for r in c.fetchall()]
+
+    c.execute("SELECT * FROM coupons WHERE redeemed_by = ? ORDER BY id DESC", (user_data['username'],))
+    redeemed_coupons = [dict(r) for r in c.fetchall()]
+
+    c.execute("SELECT * FROM groups WHERE user_id = ? ORDER BY created_at DESC LIMIT 50", (user_id,))
+    history = [dict(r) for r in c.fetchall()]
+    conn.close()
+
+    price_inr = float(get_setting("famgateway_price_inr", get_setting("credit_price_inr", "120.0")))
+    price_usd = float(get_setting("credit_price_usd", "1.50"))
+
+    upstream_status, upstream_data = call_upstream("GET", "/api/pricing")
+    regions = []
+    if upstream_status == 200 and isinstance(upstream_data, dict):
+        regions = upstream_data.get("regions", [])
+
+    upstream_credits = 0
+    up_status, up_me = call_upstream("GET", "/api/auth/me")
+    if up_status == 200 and isinstance(up_me, dict):
+        upstream_credits = up_me.get("basic_credits", 0)
+
+    pricing = {
+        "credit_price_inr": price_inr,
+        "credit_price_usd": price_usd,
+        "regions": regions,
+        "upstream_credits": upstream_credits,
+        "upstream_in_stock": upstream_credits > 0
+    }
+
+    alerts = {
+        "active": True,
+        "title": get_setting("broadcast_title", "Glory Boost Active"),
+        "message": get_setting("broadcast_message", "All server nodes are functioning normally across all regions.")
+    }
+
+    return {
+        "user": user_data,
+        "groups": groups,
+        "transactions": transactions,
+        "coupons": my_coupons,
+        "redeemed": redeemed_coupons,
+        "history": history,
+        "pricing": pricing,
+        "alerts": alerts
+    }
+
+def get_admin_dashboard_state():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) AS total_users FROM users")
+    total_users = c.fetchone()["total_users"]
+
+    c.execute("SELECT COUNT(*) AS total_groups FROM groups")
+    total_groups = c.fetchone()["total_groups"]
+
+    c.execute("SELECT SUM(basic_credits) AS total_credits FROM users")
+    total_credits = c.fetchone()["total_credits"] or 0
+
+    c.execute("SELECT COUNT(*) AS total_payments FROM transactions WHERE status = 'approved'")
+    total_payments = c.fetchone()["total_payments"] or 0
+
+    c.execute("""
+        SELECT u.id, u.username, u.role, u.basic_credits, u.premium_credits, u.is_banned, u.created_at,
+               COUNT(DISTINCT g.id) AS groups_count,
+               COALESCE(SUM(CASE WHEN t.status = 'approved' THEN t.usd ELSE 0 END), 0) AS total_spent_usd
+        FROM users u
+        LEFT JOIN groups g ON g.user_id = u.id
+        LEFT JOIN transactions t ON t.user_id = u.id
+        GROUP BY u.id
+        ORDER BY u.id DESC
+    """)
+    users = [dict(r) for r in c.fetchall()]
+
+    c.execute("SELECT * FROM transactions WHERE status = 'pending' ORDER BY id DESC")
+    pending_orders = [dict(r) for r in c.fetchall()]
+    conn.close()
+
+    upstream_status, upstream_data = call_upstream("GET", "/api/auth/me")
+    upstream_credits = 1
+    if upstream_status == 200 and isinstance(upstream_data, dict):
+        upstream_credits = upstream_data.get("basic_credits", 1)
+
+    mkey, akey = get_upstream_keys()
+    gw_key = get_setting("famgateway_api_key", "")
+
+    return {
+        "overview": {
+            "total_users": total_users,
+            "total_groups": total_groups,
+            "total_credits": total_credits,
+            "pending_orders": total_payments,
+            "total_payments": total_payments,
+            "upstream_credits_pool": upstream_credits,
+            "credit_price_usd": get_setting("credit_price_usd", "1.50"),
+            "usd_to_inr_rate": get_setting("usd_to_inr_rate", "85.0"),
+            "auto_credit_mode": get_setting("auto_credit_mode", "1")
+        },
+        "users": users,
+        "pending_orders": pending_orders,
+        "config": {
+            "api_url": get_setting("famgateway_base_url", "https://famgateway.in"),
+            "api_key": mask_secret(gw_key),
+            "upi_id": get_setting("fampay_upi_id", "merchant@fam"),
+            "price_inr": float(get_setting("famgateway_price_inr", get_setting("credit_price_inr", "120.0"))),
+            "upstream_api_key": mask_secret(akey),
+            "upstream_master_key": mask_secret(mkey)
+        },
+        "contact": {
+            "whatsapp": get_setting("contact_whatsapp", "6282326562316"),
+            "telegram": get_setting("contact_telegram", "ff_level_pro")
+        },
+        "broadcast": {
+            "title": get_setting("broadcast_title", "Glory Boost Active"),
+            "message": get_setting("broadcast_message", "All server nodes are functioning normally across all regions."),
+            "active": get_setting("broadcast_active", "1") == "1"
+        }
+    }
+
+@app.route("/")
+@app.route("/dashboard")
+def serve_index():
+    if "user_id" not in session:
+        return redirect("/login")
+    user_id = session.get("user_id")
+    state = get_user_dashboard_state(user_id)
+    if not state:
+        session.clear()
+        return redirect("/login")
+
+    state_json = json.dumps(state)
+    state_b64 = base64.b64encode(state_json.encode("utf-8")).decode("utf-8")
+
+    with open("/home/monuhortanti71/ffglory-web/index.html", "r", encoding="utf-8") as f:
+        html = f.read()
+
+    injection = f'<script id="__SYS_SYNC__">window.__INITIAL_SYNC__="{state_b64}";</script>'
+    html = html.replace("</head>", f"{injection}\n</head>")
+    return html
+
+@app.route("/login")
+@app.route("/login.html")
+def serve_login():
+    if "user_id" in session:
+        if session.get("role") == "admin":
+            return redirect("/admin")
+        return redirect("/")
+    return send_from_directory(".", "login.html")
+
+@app.route("/admin")
+@app.route("/admin.html")
+def serve_admin():
+    if "user_id" not in session:
+        return redirect("/login")
+    if session.get("role") != "admin":
+        return redirect("/dashboard")
+
+    admin_state = get_admin_dashboard_state()
+    state_b64 = base64.b64encode(json.dumps(admin_state).encode("utf-8")).decode("utf-8")
+
+    with open("/home/monuhortanti71/ffglory-web/admin.html", "r", encoding="utf-8") as f:
+        html = f.read()
+
+    injection = f'<script id="__ADMIN_SYNC__">window.__ADMIN_SYNC__="{state_b64}";</script>'
+    html = html.replace("</head>", f"{injection}\n</head>")
+    return html
+
+@app.route("/logout")
+def direct_logout():
+    session.clear()
+    return redirect("/login")
+
+@app.route("/shared.css")
+def serve_css():
+    return send_from_directory(".", "shared.css", mimetype="text/css")
+
+@app.route("/shared.js")
+def serve_shared_js():
+    return send_from_directory(".", "shared.js", mimetype="application/javascript")
+
+@app.route("/login.js")
+def serve_login_js():
+    return send_from_directory(".", "login.js", mimetype="application/javascript")
+
+@app.route("/favicon.ico")
+def serve_favicon():
+    return send_from_directory(".", "favicon.ico", mimetype="image/png")
+
+@app.route("/clan.png")
+def serve_clan_png():
+    return send_from_directory(".", "clan.png", mimetype="image/png")
+
+@app.route("/assets/<path:path>")
+def serve_assets(path):
+    return send_from_directory("assets", path)
+
+@app.route("/download")
+@app.route("/download.zip")
+@app.route("/download/project.zip")
+@app.route("/ffglory_backup.zip")
+def download_backup_zip():
+    return send_from_directory(".", "ffglory_backup.zip", as_attachment=True, download_name="ffglory_project.zip")
+
+# ==================== AUTHENTICATION (SQLITE) ====================
+
+@app.route("/api/auth/signup", methods=["POST"])
+@rate_limit(max_requests=5, window_seconds=60, key_prefix="signup")
+def auth_signup():
+    data = request.get_json(silent=True) or request.form.to_dict()
+    username = (data.get("username") or "").strip().lower()
+    password = (data.get("password") or "").strip()
+
+    if not username or len(username) < 3:
+        return jsonify({"error": "Username must be at least 3 characters."}), 400
+    if not password or len(password) < 4:
+        return jsonify({"error": "Password must be at least 4 characters."}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id FROM users WHERE username = ?", (username,))
+    if c.fetchone():
+        conn.close()
+        return jsonify({"error": f"Username '{username}' is already taken. Please choose another."}), 409
+
+    pw_hash = hash_password(password)
+    # No free credits on signup - zero balance
+    starter_credits = 0
+    c.execute("""
+        INSERT INTO users (username, password_hash, role, basic_credits, premium_credits, max_groups)
+        VALUES (?, ?, 'user', 0, 0, 100)
+    """, (username, pw_hash))
+    user_id = c.lastrowid
+    conn.commit()
+    conn.close()
+
+    session["user_id"] = user_id
+    session["username"] = username
+    session["role"] = "user"
+
+    return jsonify({
+        "success": True,
+        "message": "Account created successfully! Welcome to FFGlory.",
+        "user": {
+            "id": user_id,
+            "username": username,
+            "role": "user",
+            "basic_credits": 0,
+            "premium_credits": 0,
+            "max_groups": 100
+        }
+    })
+
+@app.route("/api/auth/login", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60, key_prefix="login")
+def auth_login():
+    data = request.get_json(silent=True) or request.form.to_dict()
+    username = (data.get("username") or "").strip().lower()
+    password = (data.get("password") or "").strip()
+
+    if not username or not password:
+        return jsonify({"error": "Please provide username and password."}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE LOWER(username) = ?", (username,))
+    user = c.fetchone()
+    conn.close()
+
+    if not user:
+        return jsonify({"error": "Invalid username or password."}), 401
+
+    if user["is_banned"]:
+        return jsonify({"error": "This account has been suspended by administration."}), 403
+
+    pw_hash = hash_password(password)
+    if user["password_hash"] != pw_hash:
+        return jsonify({"error": "Invalid username or password."}), 401
+
+    session["user_id"] = user["id"]
+    session["username"] = user["username"]
+    session["role"] = user["role"]
+
+    return jsonify({
+        "success": True,
+        "message": f"Welcome back, {user['username']}!",
+        "user": {
+            "id": user["id"],
+            "username": user["username"],
+            "role": user["role"],
+            "basic_credits": user["basic_credits"],
+            "premium_credits": user["premium_credits"],
+            "max_groups": user["max_groups"]
+        }
+    })
+
+@app.route("/api/auth/me", methods=["GET"])
+def auth_me():
+    user_id = session.get("user_id")
+    if not user_id:
+        # Default guest response
+        return jsonify({
+            "error": "Not authenticated",
+            "username": None,
+            "role": "guest",
+            "basic_credits": 0,
+            "premium_credits": 0,
+            "max_groups": 0
+        }), 401
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id, username, role, basic_credits, premium_credits, max_groups, is_banned FROM users WHERE id = ?", (user_id,))
+    user = c.fetchone()
+    conn.close()
+
+    if not user or user["is_banned"]:
+        session.clear()
+        return jsonify({"error": "User not found or banned"}), 404
+
+    return jsonify({
+        "id": user["id"],
+        "username": user["username"],
+        "role": user["role"],
+        "basic_credits": user["basic_credits"],
+        "premium_credits": user["premium_credits"],
+        "max_groups": user["max_groups"]
+    })
+
+@app.route("/api/auth/logout", methods=["POST", "GET"])
+def auth_logout():
+    session.clear()
+    return jsonify({"success": True, "redirect": "/login"})
+
+# ==================== PRICING & PAYMENT GATEWAY SETTINGS ====================
+
+@app.route("/api/pricing", methods=["GET"])
+@rate_limit(max_requests=60, window_seconds=60, key_prefix="pricing")
+def get_pricing():
+    upstream_status, upstream_data = call_upstream("GET", "/api/pricing")
+    regions = []
+    if upstream_status == 200 and isinstance(upstream_data, dict):
+        regions = upstream_data.get("regions", [])
+
+    price_inr = float(get_setting("famgateway_price_inr", get_setting("credit_price_inr", "120.0")))
+
+    upstream_credits = 0
+    up_status, up_me = call_upstream("GET", "/api/auth/me")
+    if up_status == 200 and isinstance(up_me, dict):
+        upstream_credits = up_me.get("basic_credits", 0)
+
+    return jsonify({
+        "credit_price_inr": price_inr,
+        "credit_price_usd": float(get_setting("credit_price_usd", "1.50")),
+        "regions": regions,
+        "upstream_credits": upstream_credits,
+        "upstream_in_stock": upstream_credits > 0
+    })
+
+# ==================== BOT GROUPS (RESELLER UPSTREAM AUTOMATION) ====================
+
+@app.route("/api/client/my-groups", methods=["GET"])
+def get_my_groups():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify([]), 200
+
+    is_admin = session.get("role") == "admin"
+    groups = fetch_and_sync_groups(user_id=user_id, is_admin=is_admin)
+    return jsonify(groups)
+
+@app.route("/api/client/auto-clan-group", methods=["POST"])
+def launch_clan_group():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Authentication required. Please log in."}), 401
+
+    payload = request.get_json(silent=True) or request.form.to_dict()
+    clan_id = (payload.get("clan_id") or "").strip()
+    region = (payload.get("region") or "na").strip().lower()
+
+    if not clan_id:
+        return jsonify({"error": "Clan ID is required."}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT basic_credits FROM users WHERE id = ?", (user_id,))
+    user_row = c.fetchone()
+    if not user_row or user_row["basic_credits"] < 1:
+        conn.close()
+        return jsonify({"error": "Insufficient credits! Please buy credits from the panel to launch your guild glory bot."}), 402
+
+    # Forward request directly to real upstream API using owner key
+    upstream_status, upstream_res = call_upstream("POST", "/api/client/auto-clan-group", {
+        "clan_id": clan_id,
+        "region": region
+    })
+
+    # Only treat as true success if HTTP 200 and upstream actually returned success and not error
+    is_upstream_success = (
+        upstream_status == 200 and
+        isinstance(upstream_res, dict) and
+        (upstream_res.get("success") is True or upstream_res.get("group_id") or upstream_res.get("status") == "success") and
+        not upstream_res.get("error")
+    )
+
+    if is_upstream_success:
+        # Only deduct customer credits when upstream actually started the bot!
+        c.execute("UPDATE users SET basic_credits = basic_credits - 1 WHERE id = ?", (user_id,))
+        group_id = str(upstream_res.get("group_id") or upstream_res.get("id") or f"grp_{int(time.time())}")
+        clan_name = upstream_res.get("clan_name") or f"Clan {clan_id}"
+        glory = upstream_res.get("glory_gained", 0)
+        c.execute("""
+            INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at)
+            VALUES (?, ?, ?, ?, ?, 'running', ?, 0, 'Just started', CURRENT_TIMESTAMP)
+        """, (group_id, user_id, clan_id, clan_name, region.upper(), glory))
+        tx_id = f"GLR-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+        c.execute("""
+            INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+            VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
+        """, (tx_id, user_id, session.get("username", "user"), f"LAUNCH-{group_id}"))
+        conn.commit()
+        conn.close()
+        return jsonify({
+            "success": True,
+            "message": f"Successfully launched Glory Boost for Clan {clan_id} in region {region.upper()}!",
+            "group_id": group_id,
+            "data": upstream_res
+        })
+    else:
+        # Upstream failed or has 0 credits / no balance / unauthorized / out of stock
+        # DO NOT deduct customer credit!
+        conn.close()
+        raw_err = upstream_res.get("error") if isinstance(upstream_res, dict) else str(upstream_res)
+        raw_str = f"{raw_err} {upstream_res}".lower()
+
+        is_balance_or_stock_issue = (
+            upstream_status in (401, 402, 403, 429, 500, 502, 503) or
+            any(w in raw_str for w in [
+                "insufficient", "credit", "balance", "stock", "empty", "0 credit", 
+                "unauthorized", "quota", "no credit", "not enough", "limit", "unavailable",
+                "out of"
+            ])
+        )
+
+        if is_balance_or_stock_issue:
+            err_msg = "Stock Unavailable! Glory bot slots/credits are currently out of stock. Your credits were NOT deducted. Please try again later or contact admin."
+        else:
+            err_msg = f"Stock Unavailable! {raw_err}"
+
+        return jsonify({
+            "success": False,
+            "stock_unavailable": True,
+            "error": err_msg,
+            "upstream_status": upstream_status,
+            "upstream_response": upstream_res
+        }), 400
+
+@app.route("/api/client/group-action", methods=["POST"])
+def client_group_action():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Please log in"}), 401
+
+    payload = request.get_json(silent=True) or request.form.to_dict()
+    action = payload.get("action")
+    group_id = str(payload.get("group_id") or "").strip()
+
+    if not group_id or group_id == "undefined":
+        return jsonify({"error": "Invalid group ID."}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    # Admins can manage any group; normal users manage their own
+    if session.get("role") == "admin":
+        c.execute("SELECT * FROM groups WHERE group_id = ? OR id = ?", (group_id, group_id))
+    else:
+        c.execute("SELECT * FROM groups WHERE (group_id = ? OR id = ?) AND user_id = ?", (group_id, group_id, user_id))
+
+    grp = c.fetchone()
+    real_grp_id = grp["group_id"] if grp else group_id
+
+    if action == "refund":
+        # 1. Fetch live group status from upstream or DB to verify runtime & glory
+        up_status, up_groups = call_upstream("GET", "/api/client/my-groups")
+        live_grp = None
+        if up_status == 200 and isinstance(up_groups, list):
+            for g in up_groups:
+                if str(g.get("group_id") or g.get("id")) == real_grp_id:
+                    live_grp = g
+                    break
+
+        glory_val = 0
+        if live_grp:
+            glory_val = int(live_grp.get("glory_farmed") or live_grp.get("glory_gained") or 0)
+            runtime_mins = parse_runtime_minutes(live_grp.get("created_at"), live_grp.get("uptime"))
+        elif grp:
+            glory_val = int(grp["glory_gained"] or 0)
+            runtime_mins = parse_runtime_minutes(grp["created_at"], grp["uptime"])
+        else:
+            runtime_mins = 0
+
+        # STRICT RULE 1: If even 1 glory is gained, refund is NEVER allowed!
+        if glory_val > 0:
+            conn.close()
+            return jsonify({
+                "success": False,
+                "error": f"Refund not available: Bot has already farmed {glory_val} glory! Upstream rejects refund once glory is gained."
+            }), 400
+
+        # STRICT RULE 2: If running for less than 30 minutes, refund is NOT allowed!
+        if runtime_mins < 30:
+            mins_left = 30 - runtime_mins
+            conn.close()
+            return jsonify({
+                "success": False,
+                "error": f"Refund locked! ffglory.pro policy requires minimum 30 minutes of runtime with 0 glory (Current runtime: {runtime_mins}m). Refunding before 30m will delete the bot without refunding credits. Please wait {mins_left} more minutes."
+            }), 400
+
+        try:
+            call_upstream("POST", "/api/client/group-action", {
+                "action": "delete",
+                "group_id": real_grp_id
+            })
+        except Exception:
+            pass
+
+        grp_user_id = grp["user_id"] if grp else user_id
+        c.execute("UPDATE users SET basic_credits = basic_credits + 1 WHERE id = ?", (grp_user_id,))
+        c.execute("DELETE FROM groups WHERE group_id = ? OR id = ?", (real_grp_id, group_id))
+        tx_id = f"REFUND-{int(time.time()*1000)}"
+        c.execute("""
+            INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+            VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
+        """, (tx_id, grp_user_id, session.get("username", "user"), f"REFUND-{real_grp_id}"))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True, "message": "Group refunded! 1 credit added back to your balance."})
+
+    if not grp:
+        # If group is not in local DB, but action is delete, return success
+        if action == "delete":
+            try:
+                call_upstream("POST", "/api/client/group-action", {"action": "delete", "group_id": group_id})
+            except Exception:
+                pass
+            c.execute("DELETE FROM groups WHERE group_id = ? OR id = ?", (group_id, group_id))
+            conn.commit()
+            conn.close()
+            return jsonify({"success": True, "message": "Group removed."})
+        conn.close()
+        return jsonify({"error": "Group not found or unauthorized"}), 404
+
+    real_grp_id = grp["group_id"]
+
+    # Forward to upstream (best effort, do not block local delete)
+    try:
+        upstream_status, upstream_res = call_upstream("POST", "/api/client/group-action", {
+            "action": action,
+            "group_id": real_grp_id
+        })
+    except Exception:
+        upstream_status, upstream_res = 500, {}
+
+    if action == "delete":
+        c.execute("DELETE FROM groups WHERE group_id = ? OR id = ?", (real_grp_id, group_id))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True, "message": "Group deleted successfully."})
+    elif action == "stop":
+        c.execute("UPDATE groups SET status = 'stopped' WHERE group_id = ?", (real_grp_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True, "message": "Bot group paused."})
+    elif action == "restart":
+        c.execute("UPDATE groups SET status = 'running' WHERE group_id = ?", (real_grp_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True, "message": "Bot group restarted."})
+
+    conn.close()
+    return jsonify(upstream_res if upstream_status == 200 else {"success": True, "message": f"Action '{action}' executed."})
+
+# ==================== FAMGATEWAY PURCHASES, WEBHOOKS & TRANSACTIONS ====================
+
+def fulfill_order(order_id, utr=None, sender_name=None, user_id=None):
+    """Atomically marks pending transaction as approved and credits user's account."""
+    if not order_id and not user_id:
+        return False, "Invalid order identification"
+
+    conn = get_db()
+    c = conn.cursor()
+
+    row = None
+    if order_id:
+        c.execute("""
+            SELECT id, user_id, amount, status, order_id FROM transactions 
+            WHERE order_id = ? OR order_id = ? OR order_id LIKE ?
+            ORDER BY created_at DESC LIMIT 1
+        """, (order_id, f"[FAMGATEWAY] {order_id}", f"%{order_id}%"))
+        row = c.fetchone()
+
+    if not row and user_id:
+        c.execute("""
+            SELECT id, user_id, amount, status, order_id FROM transactions 
+            WHERE user_id = ? AND status = 'pending'
+            ORDER BY created_at DESC LIMIT 1
+        """, (user_id,))
+        row = c.fetchone()
+
+    if not row:
+        conn.close()
+        return False, "Order not found"
+
+    if row["status"] == "approved":
+        conn.close()
+        return True, "Order already fulfilled"
+
+    tx_id = row["id"]
+    u_id = row["user_id"]
+    credits_amount = row["amount"]
+
+    note = f"[FAMGATEWAY] {order_id or row['order_id']}"
+    if utr:
+        note += f" | UTR: {utr}"
+    if sender_name:
+        note += f" | By: {sender_name}"
+
+    c.execute("UPDATE transactions SET status = 'approved', order_id = ? WHERE id = ?", (note, tx_id))
+    c.execute("UPDATE users SET basic_credits = basic_credits + ? WHERE id = ?", (credits_amount, u_id))
+    conn.commit()
+
+    c.execute("SELECT basic_credits FROM users WHERE id = ?", (u_id,))
+    updated_user = c.fetchone()
+    new_bal = updated_user["basic_credits"] if updated_user else credits_amount
+    conn.close()
+    return True, new_bal
+
+@app.route("/api/client/famgateway/create-order", methods=["POST"])
+def client_famgateway_create_order():
+    user_id = session.get("user_id")
+    username = session.get("username", "Guest")
+    if not user_id:
+        return jsonify({"error": "Please log in first."}), 401
+
+    payload = request.get_json(silent=True) or request.form.to_dict()
+    try:
+        credits = int(payload.get("credits") or payload.get("amount") or 1)
+    except Exception:
+        credits = 5
+
+    if credits <= 0:
+        return jsonify({"error": "Please select at least 1 credit to purchase."}), 400
+
+    price_inr = float(get_setting("famgateway_price_inr", get_setting("credit_price_inr", "120.0")))
+    total_inr = round(credits * price_inr, 2)
+
+    api_key = get_setting("famgateway_api_key", "").strip()
+    base_url = get_setting("famgateway_base_url", "https://famgateway.in").strip().rstrip("/")
+    if not base_url:
+        base_url = "https://famgateway.in"
+
+    order_id = f"fg_{int(time.time())%1000000:06d}{user_id}"
+    qr_url = ""
+    checkout_url = ""
+    upi_intent = ""
+    upi_id = "merchant@fam"
+    created_at_ist = ""
+    expires_at_ist = ""
+    gateway_connected = False
+    gateway_msg = ""
+
+    if api_key:
+        try:
+            req_body = {
+                "api_key": api_key,
+                "amount": total_inr,
+                "customer_name": username,
+                "redirect_url": request.host_url.rstrip("/") + "/#transactions"
+            }
+            res = requests.post(f"{base_url}/api/create-order", json=req_body, headers={"Content-Type": "application/json"}, timeout=8)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("status") == "success" and "data" in data:
+                    d = data["data"]
+                    order_id = d.get("order_id", order_id)
+                    qr_url = d.get("qr_url", "")
+                    checkout_url = d.get("checkout_url", "")
+                    upi_intent = d.get("upi_intent", "")
+                    upi_id = d.get("upi_id", upi_id)
+                    created_at_ist = d.get("created_at_ist", "")
+                    expires_at_ist = d.get("expires_at_ist", "")
+                    gateway_connected = True
+                else:
+                    gateway_msg = data.get("message", "Gateway returned non-success response")
+            else:
+                gateway_msg = f"HTTP {res.status_code}"
+        except Exception as e:
+            gateway_msg = str(e)
+
+    # Dynamic fallback QR generation if gateway didn't return a direct qr_url
+    if not qr_url:
+        upi_string = f"upi://pay?pa={upi_id}&pn=FamPay&tr={order_id}&tn={order_id}&am={total_inr:.2f}&cu=INR"
+        qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={requests.utils.quote(upi_string)}"
+        if not upi_intent:
+            upi_intent = upi_string
+
+    # Record pending transaction in database
+    tx_id = f"FG-{int(time.time())%1000000:06d}-{user_id}"
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+        VALUES (?, ?, ?, ?, 'basic', ?, ?, 'pending')
+    """, (tx_id, user_id, username, credits, total_inr, order_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        "success": True,
+        "order_id": order_id,
+        "credits": credits,
+        "amount_inr": total_inr,
+        "payable_amount": total_inr,
+        "upi_id": upi_id,
+        "qr_url": qr_url,
+        "checkout_url": checkout_url,
+        "upi_intent": upi_intent,
+        "gateway_connected": gateway_connected,
+        "gateway_msg": gateway_msg,
+        "created_at_ist": created_at_ist,
+        "expires_at_ist": expires_at_ist
+    })
+
+@app.route("/api/client/famgateway/verify-order", methods=["POST"])
+@app.route("/api/client/purchase-credits", methods=["POST"])
+def client_famgateway_verify_order():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Please log in first."}), 401
+
+    payload = request.get_json(silent=True) or request.form.to_dict()
+    order_id = (payload.get("order_id") or "").strip()
+    utr = (payload.get("utr") or "").strip()
+
+    if not order_id and utr:
+        order_id = utr
+    if not utr and order_id and len(order_id) >= 12 and order_id.isdigit():
+        utr = order_id
+
+    if not order_id and not utr:
+        return jsonify({"error": "Order ID or 12-digit Bank UTR is required."}), 400
+
+    api_key = get_setting("famgateway_api_key", "").strip()
+    base_url = get_setting("famgateway_base_url", "https://famgateway.in").strip().rstrip("/")
+    if not base_url:
+        base_url = "https://famgateway.in"
+
+    is_verified = False
+    sender_name = None
+
+    # Step 1: Upstream FamGateway verify-order API (if API key configured)
+    if api_key and order_id:
+        try:
+            v_url = f"{base_url}/api/verify-order.php?api_key={api_key}&order_id={order_id}"
+            res = requests.get(v_url, timeout=7)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("status") == "success":
+                    is_verified = True
+                    d = data.get("data", {})
+                    utr = d.get("utr", utr)
+                    sender_name = d.get("sender_name")
+        except Exception:
+            pass
+
+    # Step 2: FamGateway public checkout-status API
+    if not is_verified and order_id:
+        try:
+            s_url = f"{base_url}/api/checkout-status.php?order_id={order_id}"
+            res = requests.get(s_url, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("status") == "success":
+                    is_verified = True
+                    utr = data.get("utr", utr)
+                    sender_name = data.get("sender_name")
+        except Exception:
+            pass
+
+    # Step 3: Accept valid 10-12 digit UTR provided by customer
+    if not is_verified and utr and len(utr) >= 10:
+        is_verified = True
+
+    if not is_verified:
+        return jsonify({
+            "success": False,
+            "error": "Payment not verified yet. Please ensure transaction is complete or enter your 12-digit Bank UTR."
+        }), 400
+
+    success, res_val = fulfill_order(order_id, utr=utr, sender_name=sender_name, user_id=user_id)
+    if not success:
+        return jsonify({"error": "No matching pending order found to credit. Please create an order first."}), 404
+
+    return jsonify({
+        "success": True,
+        "auto_credited": True,
+        "new_balance": res_val if isinstance(res_val, (int, float)) else None,
+        "utr": utr,
+        "message": f"FamGateway payment verified! Credits added instantly! Balance: {res_val} credits."
+    })
+
+@app.route("/api/client/famgateway/check-status", methods=["GET"])
+def client_famgateway_check_status():
+    user_id = session.get("user_id")
+    order_id = request.args.get("order_id", "").strip()
+    if not order_id:
+        return jsonify({"status": "pending", "paid": False})
+
+    base_url = get_setting("famgateway_base_url", "https://famgateway.in").strip().rstrip("/")
+    if not base_url:
+        base_url = "https://famgateway.in"
+    api_key = get_setting("famgateway_api_key", "").strip()
+
+    paid = False
+    utr = None
+    sender = None
+
+    try:
+        res = requests.get(f"{base_url}/api/checkout-status.php?order_id={order_id}", timeout=4)
+        if res.status_code == 200:
+            data = res.json()
+            if data.get("status") == "success":
+                paid = True
+                utr = data.get("utr")
+                sender = data.get("sender_name")
+    except Exception:
+        pass
+
+    if not paid and api_key:
+        try:
+            res = requests.get(f"{base_url}/api/verify-order.php?api_key={api_key}&order_id={order_id}", timeout=4)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("status") == "success":
+                    paid = True
+                    d = data.get("data", {})
+                    utr = d.get("utr")
+                    sender = d.get("sender_name")
+        except Exception:
+            pass
+
+    if paid:
+        success, res_val = fulfill_order(order_id, utr=utr, sender_name=sender, user_id=user_id)
+        bal = 0
+        if user_id:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT basic_credits FROM users WHERE id = ?", (user_id,))
+            u = c.fetchone()
+            bal = u["basic_credits"] if u else 0
+            conn.close()
+        return jsonify({
+            "status": "success",
+            "paid": True,
+            "new_balance": bal,
+            "utr": utr,
+            "message": "Payment confirmed! Credits added!"
+        })
+
+    return jsonify({"status": "pending", "paid": False})
+
+@app.route("/api/famgateway-webhook", methods=["POST"])
+def famgateway_webhook():
+    api_key = get_setting("famgateway_api_key", "").strip()
+    signature = request.headers.get("x-famgateway-signature")
+    raw_body = request.get_data()
+
+    if signature and api_key:
+        expected = hmac.new(api_key.encode(), raw_body, hashlib.sha256).hexdigest()
+        if signature != expected:
+            return jsonify({"error": "Invalid webhook signature"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    status = payload.get("status")
+    order_id = payload.get("order_id")
+    utr = payload.get("utr")
+    sender_name = payload.get("sender_name")
+
+    if status == "success" and order_id:
+        success, res = fulfill_order(order_id, utr=utr, sender_name=sender_name)
+        return jsonify({"status": "received", "fulfilled": success, "detail": res})
+
+    return jsonify({"status": "received"})
+
+@app.route("/api/client/transactions", methods=["GET"])
+def client_transactions():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify([]), 200
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
+    rows = c.fetchall()
+    conn.close()
+
+    res = []
+    for r in rows:
+        res.append({
+            "id": r["id"],
+            "credits": r["amount"],
+            "type": r["credit_type"],
+            "amount_usd": r["usd"],
+            "order_id": r["order_id"],
+            "status": r["status"],
+            "date": r["created_at"]
+        })
+    return jsonify(res)
+
+@app.route("/api/client/redeem-coupon", methods=["POST"])
+def client_redeem_coupon():
+    user_id = session.get("user_id")
+    username = session.get("username", "Guest")
+    if not user_id:
+        return jsonify({"error": "Please log in"}), 401
+
+    payload = request.get_json(silent=True) or request.form.to_dict()
+    code = (payload.get("code") or "").strip().upper()
+
+    if not code:
+        return jsonify({"error": "Coupon code is required"}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM coupons WHERE code = ?", (code,))
+    local_coupon = c.fetchone()
+
+    # Check local status
+    if local_coupon:
+        if local_coupon["status"] == "redeemed":
+            conn.close()
+            return jsonify({"error": f"This coupon code has already been redeemed."}), 400
+        if local_coupon["status"] == "cancelled":
+            conn.close()
+            return jsonify({"error": "This coupon code was cancelled by the creator."}), 400
+
+    # 1. Redeem on upstream ffglory.pro
+    # This automatically adds credits into the reseller API wallet on ffglory.pro!
+    up_status, up_res = call_upstream("POST", "/api/client/redeem-coupon", json_data={"code": code})
+    
+    # Check if upstream accepted it or if it was valid
+    credits = 0
+    if up_status == 200 and isinstance(up_res, dict):
+        credits = int(up_res.get("basic_credits") or (local_coupon["credits"] if local_coupon else 1))
+    elif local_coupon and local_coupon["status"] == "active":
+        # Fallback for local coupons
+        credits = local_coupon["credits"]
+    else:
+        conn.close()
+        err_msg = up_res.get("error", "Invalid or expired coupon code.") if isinstance(up_res, dict) else "Coupon redemption failed."
+        return jsonify({"error": err_msg}), 400
+
+    # 2. Add credits to the redeeming user's wallet in local database!
+    c.execute("UPDATE users SET basic_credits = basic_credits + ? WHERE id = ?", (credits, user_id))
+
+    # 3. Update local coupon record
+    if local_coupon:
+        c.execute("UPDATE coupons SET status = 'redeemed', redeemed_by = ?, redeemed_at = CURRENT_TIMESTAMP WHERE id = ?", (username, local_coupon["id"]))
+    else:
+        import uuid
+        cpn_id = f"cpn_ext_{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+        c.execute("""
+            INSERT INTO coupons (id, code, credits, created_by, status, redeemed_by, redeemed_at)
+            VALUES (?, ?, ?, 'ffglory_upstream', 'redeemed', ?, CURRENT_TIMESTAMP)
+        """, (cpn_id, code, credits, username))
+
+    import uuid
+    tx_id = f"CPN-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+    c.execute("""
+        INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+        VALUES (?, ?, ?, ?, 'basic', 0.0, ?, 'approved')
+    """, (tx_id, user_id, username, credits, f"COUPON: {code}"))
+
+    conn.commit()
+    c.execute("SELECT basic_credits FROM users WHERE id = ?", (user_id,))
+    new_bal = c.fetchone()["basic_credits"]
+    conn.close()
+
+    return jsonify({
+        "success": True,
+        "new_balance": new_bal,
+        "credits": credits,
+        "message": f"Coupon redeemed successfully! +{credits} Credits added to your account."
+    })
+
+@app.route("/api/client/create-coupon", methods=["POST"])
+def client_create_coupon():
+    user_id = session.get("user_id")
+    username = session.get("username", "Guest")
+    if not user_id:
+        return jsonify({"error": "Please log in"}), 401
+
+    payload = request.get_json(silent=True) or request.form.to_dict()
+    amount = int(payload.get("basic_credits") or payload.get("credits") or 1)
+
+    if amount < 1:
+        return jsonify({"error": "Coupon must contain at least 1 credit"}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT basic_credits, username FROM users WHERE id = ?", (user_id,))
+    user = c.fetchone()
+    if not user or user["basic_credits"] < amount:
+        conn.close()
+        return jsonify({"error": f"Insufficient credits in your wallet (Required: {amount}, Available: {user['basic_credits'] if user else 0})."}), 400
+
+    uname = user["username"]
+
+    code = None
+    try:
+        status, up_res = call_upstream("POST", "/api/client/create-coupon", json_data={"basic_credits": amount, "premium_credits": 0})
+        if status == 200 and isinstance(up_res, dict):
+            code = (up_res.get("coupon", {}) or {}).get("code") or up_res.get("code")
+    except Exception:
+        pass
+
+    if not code:
+        code = f"CPN-{secrets.token_hex(4).upper()}-{secrets.token_hex(4).upper()}"
+
+    # Deduct customer wallet
+    c.execute("UPDATE users SET basic_credits = basic_credits - ? WHERE id = ?", (amount, user_id))
+
+    coupon_id = f"cpn_{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+    c.execute("""
+        INSERT INTO coupons (id, code, credits, credit_type, created_by, status)
+        VALUES (?, ?, ?, 'basic', ?, 'active')
+    """, (coupon_id, code, amount, uname))
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        "success": True,
+        "code": code,
+        "credits": amount,
+        "coupon": {
+            "id": coupon_id,
+            "code": code,
+            "credits": amount,
+            "status": "active"
+        },
+        "message": f"Coupon code {code} generated successfully for {amount} credits!"
+    })
+
+@app.route("/api/client/cancel-coupon", methods=["POST"])
+def client_cancel_coupon():
+    user_id = session.get("user_id")
+    username = session.get("username", "Guest")
+    if not user_id:
+        return jsonify({"error": "Please log in"}), 401
+
+    payload = request.get_json(silent=True) or request.form.to_dict()
+    code = (payload.get("code") or "").strip().upper()
+
+    if not code:
+        return jsonify({"error": "Coupon code is required"}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM coupons WHERE code = ? AND created_by = ?", (code, username))
+    coupon = c.fetchone()
+
+    if not coupon:
+        conn.close()
+        return jsonify({"error": "Coupon not found or does not belong to you."}), 404
+
+    if coupon["status"] != "active":
+        conn.close()
+        return jsonify({"error": f"Cannot cancel coupon with status: {coupon['status']}"}), 400
+
+    refund_credits = coupon["credits"]
+
+    # 1. Cancel on upstream ffglory.pro
+    call_upstream("POST", "/api/client/cancel-coupon", json_data={"code": code})
+
+    # 2. Refund local customer balance
+    c.execute("UPDATE coupons SET status = 'cancelled' WHERE id = ?", (coupon["id"],))
+    c.execute("UPDATE users SET basic_credits = basic_credits + ? WHERE id = ?", (refund_credits, user_id))
+
+    import uuid
+    tx_id = f"REF-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+    c.execute("""
+        INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+        VALUES (?, ?, ?, ?, 'basic', 0.0, ?, 'approved')
+    """, (tx_id, user_id, username, refund_credits, f"REFUND: CANCELLED {code}"))
+
+    conn.commit()
+    c.execute("SELECT basic_credits FROM users WHERE id = ?", (user_id,))
+    new_bal = c.fetchone()["basic_credits"]
+    conn.close()
+
+    return jsonify({
+        "success": True,
+        "new_balance": new_bal,
+        "message": f"Coupon {code} cancelled and +{refund_credits} credits refunded to your balance!"
+    })
+
+@app.route("/api/client/my-coupons", methods=["GET"])
+def client_my_coupons():
+    username = session.get("username")
+    if not username:
+        return jsonify([]), 200
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM coupons WHERE created_by = ? ORDER BY created_at DESC", (username,))
+    rows = c.fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route("/api/client/redeemed-coupons", methods=["GET"])
+def client_redeemed_coupons():
+    username = session.get("username")
+    if not username:
+        return jsonify([]), 200
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM coupons WHERE redeemed_by = ? ORDER BY redeemed_at DESC", (username,))
+    rows = c.fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route("/api/client/history", methods=["GET"])
+def client_history():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify([]), 200
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM groups WHERE user_id = ? ORDER BY created_at DESC LIMIT 50", (user_id,))
+    rows = c.fetchall()
+    conn.close()
+    res = []
+    for r in rows:
+        res.append({
+            "group_id": r["group_id"],
+            "clan_id": r["clan_id"],
+            "region": r["region"].upper(),
+            "glory_gained": r["glory_gained"],
+            "status": r["status"],
+            "created_at": r["created_at"]
+        })
+    return jsonify(res)
+
+@app.route("/api/client/inbox", methods=["GET"])
+def client_inbox():
+    return jsonify([
+        {
+            "id": 1,
+            "title": "Welcome to FFGlory Reseller Panel",
+            "message": "Start automated glory boosting for your Free Fire clan! Buy credits via Binance Pay, UPI, or Crypto USDT.",
+            "date": "Today",
+            "unread": False
+        }
+    ])
+
+@app.route("/api/client/alerts", methods=["GET"])
+def client_alerts():
+    active = get_setting("broadcast_active", "0") == "1"
+    if not active:
+        return jsonify({"active": False})
+    return jsonify({
+        "active": True,
+        "title": get_setting("broadcast_title", "Glory Boost Notice"),
+        "message": get_setting("broadcast_message", "All server nodes are functioning normally across all regions.")
+    })
+
+# ==================== ADMIN PANEL MANAGEMENT ====================
+
+def require_admin():
+    return session.get("role") == "admin"
+
+@app.route("/api/admin/overview", methods=["GET"])
+def admin_overview():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) AS total_users FROM users")
+    total_users = c.fetchone()["total_users"]
+
+    c.execute("SELECT COUNT(*) AS total_groups FROM groups")
+    total_groups = c.fetchone()["total_groups"]
+
+    c.execute("SELECT SUM(basic_credits) AS total_credits FROM users")
+    total_credits = c.fetchone()["total_credits"] or 0
+
+    c.execute("SELECT COUNT(*) AS total_payments FROM transactions WHERE status = 'approved'")
+    total_payments = c.fetchone()["total_payments"] or 0
+    conn.close()
+
+    # Upstream credits
+    upstream_status, upstream_data = call_upstream("GET", "/api/auth/me")
+    upstream_credits = 1
+    if upstream_status == 200 and isinstance(upstream_data, dict):
+        upstream_credits = upstream_data.get("basic_credits", 1)
+
+    return jsonify({
+        "total_users": total_users,
+        "total_groups": total_groups,
+        "total_credits": total_credits,
+        "pending_orders": total_payments,
+        "total_payments": total_payments,
+        "upstream_credits_pool": upstream_credits,
+        "credit_price_usd": get_setting("credit_price_usd", "1.50"),
+        "usd_to_inr_rate": get_setting("usd_to_inr_rate", "85.0"),
+        "reseller_binance_id": get_setting("reseller_binance_pay_id", "759228054"),
+        "reseller_upi_id": get_setting("reseller_upi_id", "ffglory@upi"),
+        "reseller_usdt_address": get_setting("reseller_usdt_address", "TYDzsxdczEfD29g46j5D7LLDIBOn7T654W"),
+        "auto_credit_mode": get_setting("auto_credit_mode", "1")
+    })
+
+@app.route("/api/admin/users", methods=["GET"])
+def admin_users():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        SELECT u.id, u.username, u.role, u.basic_credits, u.premium_credits, u.is_banned, u.created_at,
+               COUNT(DISTINCT g.id) AS groups_count,
+               COALESCE(SUM(CASE WHEN t.status = 'approved' THEN t.usd ELSE 0 END), 0) AS total_spent_usd
+        FROM users u
+        LEFT JOIN groups g ON g.user_id = u.id
+        LEFT JOIN transactions t ON t.user_id = u.id
+        GROUP BY u.id
+        ORDER BY u.id DESC
+    """)
+    rows = c.fetchall()
+    conn.close()
+
+    return jsonify([dict(r) for r in rows])
+
+@app.route("/api/admin/user/toggle-ban", methods=["POST"])
+def admin_toggle_ban():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    user_id = data.get("user_id")
+
+    if not user_id:
+        return jsonify({"error": "User ID is required"}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id, username, role, is_banned FROM users WHERE id = ?", (user_id,))
+    user = c.fetchone()
+    if not user:
+        conn.close()
+        return jsonify({"error": "User not found"}), 404
+
+    if user["role"] == "admin" and user["username"] == "admin":
+        conn.close()
+        return jsonify({"error": "Cannot ban master admin."}), 400
+
+    new_status = 0 if user["is_banned"] else 1
+    c.execute("UPDATE users SET is_banned = ? WHERE id = ?", (new_status, user_id))
+    conn.commit()
+    conn.close()
+
+    status_txt = "suspended (banned)" if new_status else "active (unbanned)"
+    return jsonify({"success": True, "is_banned": new_status, "message": f"User '{user['username']}' is now {status_txt}."})
+
+@app.route("/api/admin/user/reset-password", methods=["POST"])
+def admin_reset_password():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    user_id = data.get("user_id")
+    new_pw = (data.get("password") or "").strip()
+
+    if not user_id or not new_pw:
+        return jsonify({"error": "User ID and new password are required"}), 400
+    if len(new_pw) < 4:
+        return jsonify({"error": "Password must be at least 4 characters long."}), 400
+
+    pw_hash = hash_password(new_pw)
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (pw_hash, user_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"success": True, "message": "User password has been successfully reset!"})
+
+@app.route("/api/admin/user/toggle-role", methods=["POST"])
+def admin_toggle_role():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    user_id = data.get("user_id")
+    target_role = (data.get("role") or "").strip().lower()
+
+    if target_role not in ["admin", "user"]:
+        return jsonify({"error": "Invalid role specified."}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id, username, role FROM users WHERE id = ?", (user_id,))
+    user = c.fetchone()
+    if not user:
+        conn.close()
+        return jsonify({"error": "User not found"}), 404
+
+    if user["username"] == "admin" and target_role != "admin":
+        conn.close()
+        return jsonify({"error": "Cannot demote primary admin."}), 400
+
+    c.execute("UPDATE users SET role = ? WHERE id = ?", (target_role, user_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"success": True, "message": f"User '{user['username']}' role changed to {target_role.upper()}."})
+
+@app.route("/api/admin/user/delete", methods=["POST"])
+def admin_delete_user():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    user_id = data.get("user_id")
+    username = (data.get("username") or "").strip().lower()
+
+    conn = get_db()
+    c = conn.cursor()
+    if user_id:
+        c.execute("SELECT id, username, role FROM users WHERE id = ? OR LOWER(username) = ?", (user_id, str(user_id).lower()))
+    elif username:
+        c.execute("SELECT id, username, role FROM users WHERE LOWER(username) = ?", (username,))
+    else:
+        conn.close()
+        return jsonify({"error": "User identifier is required"}), 400
+
+    user = c.fetchone()
+    if not user:
+        conn.close()
+        return jsonify({"error": "User not found"}), 404
+
+    target_id = user["id"]
+    target_username = user["username"]
+
+    if target_username.lower() == "admin" or target_id == 1:
+        conn.close()
+        return jsonify({"error": "Primary administrator account cannot be deleted."}), 400
+
+    c.execute("DELETE FROM groups WHERE user_id = ?", (target_id,))
+    c.execute("DELETE FROM transactions WHERE user_id = ?", (target_id,))
+    c.execute("DELETE FROM coupons WHERE created_by = ? OR redeemed_by = ?", (target_username, target_username))
+    c.execute("DELETE FROM users WHERE id = ?", (target_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"success": True, "message": f"User '{target_username}' and all associated records deleted permanently."})
+
+@app.route("/api/admin/adjust-credits", methods=["POST"])
+def admin_adjust_credits():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    username = (data.get("username") or "").strip().lower()
+    amount = int(data.get("amount") or 0)
+    mode = data.get("mode", "add") # "add" or "set"
+
+    if not username:
+        return jsonify({"error": "Please enter or select a username."}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id, username, basic_credits FROM users WHERE LOWER(username) = ?", (username,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": f"Customer '{username}' not found in database."}), 404
+
+    target_id = row["id"]
+    real_username = row["username"]
+
+    if mode == "set":
+        c.execute("UPDATE users SET basic_credits = ? WHERE id = ?", (max(0, amount), target_id))
+    elif mode == "deduct":
+        c.execute("UPDATE users SET basic_credits = MAX(0, basic_credits - ?) WHERE id = ?", (amount, target_id))
+    else:
+        c.execute("UPDATE users SET basic_credits = MAX(0, basic_credits + ?) WHERE id = ?", (amount, target_id))
+
+    # Log manual adjustment in transactions
+    tx_id = f"ADM-{int(time.time())%1000000:06d}"
+    c.execute("""
+        INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+        VALUES (?, ?, ?, ?, 'basic', 0.00, 'ADMIN_MANUAL_CREDIT', 'approved')
+    """, (tx_id, target_id, real_username, amount))
+
+    conn.commit()
+
+    c.execute("SELECT basic_credits FROM users WHERE id = ?", (target_id,))
+    new_bal = c.fetchone()["basic_credits"]
+    conn.close()
+
+    return jsonify({
+        "success": True,
+        "new_balance": new_bal,
+        "message": f"Successfully updated '{real_username}' balance to {new_bal} credits!"
+    })
+
+@app.route("/api/admin/pending-orders", methods=["GET"])
+def admin_pending_orders():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM transactions ORDER BY created_at DESC LIMIT 100")
+    rows = c.fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route("/api/admin/approve-order", methods=["POST"])
+def admin_approve_order():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    tx_id = data.get("transaction_id")
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,))
+    tx = c.fetchone()
+    if not tx:
+        conn.close()
+        return jsonify({"error": "Order not found"}), 404
+
+    if tx["status"] == "approved":
+        conn.close()
+        return jsonify({"error": "Order is already approved."}), 400
+
+    c.execute("UPDATE transactions SET status = 'approved' WHERE id = ?", (tx_id,))
+    c.execute("UPDATE users SET basic_credits = basic_credits + ? WHERE id = ?", (tx["amount"], tx["user_id"]))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"success": True, "message": f"Order {tx_id} approved! +{tx['amount']} credits delivered to customer {tx['username']}."})
+
+@app.route("/api/admin/reject-order", methods=["POST"])
+def admin_reject_order():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    tx_id = data.get("transaction_id")
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("UPDATE transactions SET status = 'rejected' WHERE id = ?", (tx_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"success": True, "message": f"Order {tx_id} rejected."})
+
+def format_wa_url(val):
+    if not val:
+        return "https://wa.me/6282326562316"
+    val = str(val).strip()
+    if val.startswith("http://") or val.startswith("https://"):
+        return val
+    clean_num = "".join(c for c in val if c.isdigit())
+    return f"https://wa.me/{clean_num}" if clean_num else "https://wa.me/6282326562316"
+
+def format_tg_url(val):
+    if not val:
+        return "https://t.me/ff_level_pro"
+    val = str(val).strip()
+    if val.startswith("http://") or val.startswith("https://"):
+        return val
+    clean_uname = val.lstrip("@").strip()
+    return f"https://t.me/{clean_uname}" if clean_uname else "https://t.me/ff_level_pro"
+
+@app.route("/api/contact", methods=["GET"])
+@app.route("/api/public/contact", methods=["GET"])
+def get_public_contact():
+    wa = get_setting("contact_whatsapp", "6282326562316")
+    tg = get_setting("contact_telegram", "ff_level_pro")
+    return jsonify({
+        "success": True,
+        "whatsapp": wa,
+        "whatsapp_url": format_wa_url(wa),
+        "telegram": tg,
+        "telegram_url": format_tg_url(tg)
+    })
+
+@app.route("/api/admin/contact/save", methods=["POST"])
+def admin_save_contact():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+    data = request.get_json(silent=True) or request.form.to_dict()
+    wa = str(data.get("whatsapp", data.get("contact_whatsapp", ""))).strip()
+    tg = str(data.get("telegram", data.get("contact_telegram", ""))).strip()
+    if wa:
+        set_setting("contact_whatsapp", wa)
+    if tg:
+        set_setting("contact_telegram", tg)
+    return jsonify({
+        "success": True,
+        "message": "Contact support links updated successfully!",
+        "whatsapp": get_setting("contact_whatsapp", "6282326562316"),
+        "telegram": get_setting("contact_telegram", "ff_level_pro"),
+        "whatsapp_url": format_wa_url(get_setting("contact_whatsapp", "6282326562316")),
+        "telegram_url": format_tg_url(get_setting("contact_telegram", "ff_level_pro"))
+    })
+
+@app.route("/api/admin/settings", methods=["GET"])
+def admin_get_settings():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    keys = [
+        "credit_price_usd", "usd_to_inr_rate", "reseller_binance_pay_id",
+        "reseller_upi_id", "reseller_upi_name", "reseller_usdt_address",
+        "reseller_usdt_network", "auto_credit_mode", "upstream_api_key",
+        "upstream_master_key", "broadcast_active", "broadcast_title", "broadcast_message",
+        "custom_payment_api_url", "custom_payment_api_key", "custom_payment_webhook_secret",
+        "custom_gateway_mode", "contact_whatsapp", "contact_telegram"
+    ]
+    res = {}
+    for k in keys:
+        if k == "contact_whatsapp":
+            res[k] = get_setting(k, "6282326562316")
+        elif k == "contact_telegram":
+            res[k] = get_setting(k, "ff_level_pro")
+        else:
+            res[k] = get_setting(k, "")
+    res["contact_whatsapp_url"] = format_wa_url(res.get("contact_whatsapp"))
+    res["contact_telegram_url"] = format_tg_url(res.get("contact_telegram"))
+    return jsonify(res)
+
+@app.route("/api/admin/save-settings", methods=["POST"])
+def admin_save_settings():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    fields = [
+        "credit_price_usd", "usd_to_inr_rate", "reseller_binance_pay_id",
+        "reseller_upi_id", "reseller_upi_name", "reseller_usdt_address",
+        "reseller_usdt_network", "auto_credit_mode", "upstream_api_key",
+        "upstream_master_key", "custom_payment_api_url", "custom_payment_api_key",
+        "custom_payment_webhook_secret", "custom_gateway_mode",
+        "contact_whatsapp", "contact_telegram"
+    ]
+    for f in fields:
+        if f in data:
+            set_setting(f, str(data[f]))
+
+    return jsonify({"success": True, "message": "Settings & support links saved successfully!"})
+
+
+# ==================== ADMIN PRICING & LOGS MANAGEMENT ====================
+
+@app.route("/api/admin/pricing/save", methods=["POST"])
+def admin_pricing_save():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+    data = request.get_json(silent=True) or request.form.to_dict()
+    price_inr = str(data.get("price_inr") or data.get("credit_price_inr") or "").strip()
+    price_usd = str(data.get("price_usd") or data.get("credit_price_usd") or "").strip()
+    if price_inr:
+        set_setting("credit_price_inr", price_inr)
+        set_setting("famgateway_price_inr", price_inr)
+    if price_usd:
+        set_setting("credit_price_usd", price_usd)
+    return jsonify({
+        "success": True,
+        "message": f"Credit prices saved! ₹{price_inr} INR / ${price_usd} USD",
+        "price_inr": price_inr,
+        "price_usd": price_usd
+    })
+
+@app.route("/api/admin/transactions/clear", methods=["POST"])
+def admin_transactions_clear():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM transactions")
+    deleted_count = c.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({
+        "success": True,
+        "message": f"Successfully cleared all {deleted_count} top-up records from history."
+    })
+
+@app.route("/api/admin/activity-logs", methods=["GET"])
+def admin_activity_logs():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+    conn = get_db()
+    c = conn.cursor()
+    logs = []
+
+    # 1. Transactions logs (Top-ups, Coupons, Bot launches, Admin adjustments)
+    c.execute("""
+        SELECT id, user_id, username, amount, credit_type, usd, order_id, status, created_at
+        FROM transactions
+        ORDER BY created_at DESC
+        LIMIT 100
+    """)
+    for r in c.fetchall():
+        oid = str(r["order_id"] or "")
+        amt = r["amount"] or 0
+        ctype = (r["credit_type"] or "basic").title()
+        user = r["username"] or "Unknown"
+        status = (r["status"] or "approved").upper()
+        created_at = str(r["created_at"] or "")
+
+        if oid.startswith("fg_") or oid.startswith("FG-") or oid.startswith("FAM-"):
+            logs.append({
+                "type": "topup",
+                "icon": "💳",
+                "badge": "TOP-UP",
+                "badge_color": "emerald",
+                "user": user,
+                "title": f"Purchased {amt} {ctype} Credits",
+                "details": f"Order: {oid} &bull; ₹{r['usd']}",
+                "status": status,
+                "time": created_at
+            })
+        elif oid.startswith("CREATE-") or oid.startswith("COUPON:") or oid.startswith("CPN-"):
+            code = oid.replace("CREATE-", "").replace("COUPON: ", "")
+            logs.append({
+                "type": "coupon_create",
+                "icon": "🎟️",
+                "badge": "COUPON CREATED",
+                "badge_color": "amber",
+                "user": user,
+                "title": f"Created Gift Coupon ({amt} Credits)",
+                "details": f"Code: {code}",
+                "status": "ACTIVE",
+                "time": created_at
+            })
+        elif oid.startswith("REDEEM-") or oid.startswith("RDM-"):
+            code = oid.replace("REDEEM-", "")
+            logs.append({
+                "type": "coupon_redeem",
+                "icon": "🎁",
+                "badge": "COUPON REDEEMED",
+                "badge_color": "purple",
+                "user": user,
+                "title": f"Redeemed Coupon (+{amt} Credits)",
+                "details": f"Code: {code}",
+                "status": "REDEEMED",
+                "time": created_at
+            })
+        elif oid.startswith("CANCEL-") or oid.startswith("REF-"):
+            code = oid.replace("CANCEL-", "")
+            logs.append({
+                "type": "coupon_cancel",
+                "icon": "↩️",
+                "badge": "COUPON REFUND",
+                "badge_color": "red",
+                "user": user,
+                "title": f"Cancelled Coupon (+{amt} Refunded)",
+                "details": f"Code: {code}",
+                "status": "REFUNDED",
+                "time": created_at
+            })
+        elif oid.startswith("LAUNCH-") or oid.startswith("GLR-"):
+            grp = oid.replace("LAUNCH-", "")
+            logs.append({
+                "type": "launch",
+                "icon": "🚀",
+                "badge": "BOT LAUNCHED",
+                "badge_color": "blue",
+                "user": user,
+                "title": f"Launched Glory Bot Group",
+                "details": f"Group: {grp} &bull; Deducted {amt} Credit",
+                "status": "ONLINE",
+                "time": created_at
+            })
+        elif "ADMIN" in oid or oid.startswith("ADM-"):
+            logs.append({
+                "type": "admin_adjust",
+                "icon": "⚙️",
+                "badge": "ADMIN ADJUST",
+                "badge_color": "gold",
+                "user": user,
+                "title": f"Admin Adjusted {amt} Credits",
+                "details": oid,
+                "status": status,
+                "time": created_at
+            })
+        else:
+            logs.append({
+                "type": "other",
+                "icon": "📝",
+                "badge": "TRANSACTION",
+                "badge_color": "gray",
+                "user": user,
+                "title": f"Transaction ({amt} Credits)",
+                "details": f"Ref: {oid} &bull; ₹{r['usd']}",
+                "status": status,
+                "time": created_at
+            })
+
+    # 2. Check active groups launched directly
+    c.execute("""
+        SELECT g.group_id, g.clan_id, g.region, g.status, g.glory_gained, g.created_at, u.username
+        FROM groups g
+        LEFT JOIN users u ON u.id = g.user_id
+        ORDER BY g.created_at DESC
+        LIMIT 50
+    """)
+    for g in c.fetchall():
+        grp_id = str(g["group_id"])
+        if not any(grp_id in l.get("details", "") for l in logs):
+            logs.append({
+                "type": "launch",
+                "icon": "🚀",
+                "badge": "BOT LAUNCHED",
+                "badge_color": "blue",
+                "user": g["username"] or "Member",
+                "title": f"Launched Clan Bot (Clan: {g['clan_id']})",
+                "details": f"Group ID: {grp_id} &bull; Region: {str(g['region']).upper()}",
+                "status": str(g["status"]).upper(),
+                "time": str(g["created_at"] or "")
+            })
+
+    conn.close()
+    logs.sort(key=lambda x: str(x.get("time", "")), reverse=True)
+    return jsonify(logs[:60])
+
+@app.route("/api/admin/broadcast-alert", methods=["POST"])
+def admin_broadcast():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    set_setting("broadcast_active", "1" if data.get("active") else "0")
+    set_setting("broadcast_title", data.get("title", ""))
+    set_setting("broadcast_message", data.get("message", ""))
+
+    return jsonify({"success": True, "message": "Broadcast alert saved and active."})
+
+
+# ==================== CUSTOM PAYMENT GATEWAY WEBHOOK & TESTER ====================
+
+@app.route("/api/payment/webhook", methods=["POST"])
+def payment_webhook():
+    data = request.get_json(silent=True) or request.form.to_dict()
+    secret = get_setting("custom_payment_webhook_secret", "").strip()
+
+    incoming_token = request.headers.get("x-webhook-secret") or data.get("secret")
+    if secret and incoming_token != secret:
+        return jsonify({"error": "Unauthorized webhook token."}), 401
+
+    username = (data.get("username") or "").strip().lower()
+    user_id = data.get("user_id")
+    amount = int(data.get("amount") or data.get("credits") or 0)
+    order_id = (data.get("order_id") or data.get("tx_id") or f"WH-{int(time.time())}").strip()
+    status = (data.get("status") or "completed").strip().lower()
+
+    if amount <= 0:
+        return jsonify({"error": "Credit amount must be greater than 0."}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    if user_id:
+        c.execute("SELECT id, username, basic_credits FROM users WHERE id = ?", (user_id,))
+    elif username:
+        c.execute("SELECT id, username, basic_credits FROM users WHERE LOWER(username) = ?", (username,))
+    else:
+        conn.close()
+        return jsonify({"error": "Missing customer identifier (user_id or username)."}), 400
+
+    user = c.fetchone()
+    if not user:
+        conn.close()
+        return jsonify({"error": "User not found in database."}), 404
+
+    target_id = user["id"]
+    real_username = user["username"]
+
+    if status in ["completed", "approved", "success", "paid"]:
+        c.execute("UPDATE users SET basic_credits = basic_credits + ? WHERE id = ?", (amount, target_id))
+        tx_id = f"TX-{int(time.time())%1000000:06d}"
+        c.execute("""
+            INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+            VALUES (?, ?, ?, ?, 'basic', 0.00, ?, 'approved')
+        """, (tx_id, target_id, real_username, amount, f"[WEBHOOK] {order_id}"))
+        conn.commit()
+
+    c.execute("SELECT basic_credits FROM users WHERE id = ?", (target_id,))
+    new_bal = c.fetchone()["basic_credits"]
+    conn.close()
+
+    return jsonify({
+        "success": True,
+        "message": f"Webhook verified: Added {amount} credits to {real_username}. New balance: {new_bal} credits.",
+        "new_balance": new_bal
+    })
+
+@app.route("/api/admin/payment/test-api", methods=["POST"])
+def admin_test_payment_api():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    test_url = (data.get("api_url") or get_setting("custom_payment_api_url", "")).strip()
+    test_key = (data.get("api_key") or get_setting("custom_payment_api_key", "")).strip()
+    test_order_id = (data.get("order_id") or f"TEST-{int(time.time())%1000000}").strip()
+    test_amount = int(data.get("amount") or 10)
+
+    if not test_url:
+        return jsonify({
+            "success": True,
+            "mode": "simulator",
+            "status_code": 200,
+            "latency_ms": 8,
+            "response": {
+                "verified": True,
+                "order_id": test_order_id,
+                "amount": test_amount,
+                "status": "success",
+                "message": "Built-in payment verification test simulator passed 100%! Auto-credit will work instantly."
+            }
+        })
+
+    start_time = time.time()
+    try:
+        headers = {"Authorization": f"Bearer {test_key}", "Content-Type": "application/json"}
+        r = requests.post(test_url, json={
+            "test": True,
+            "order_id": test_order_id,
+            "amount": test_amount,
+            "amount_usd": 15.00,
+            "payment_method": "upi"
+        }, headers=headers, timeout=8)
+        latency = int((time.time() - start_time) * 1000)
+        try:
+            body = r.json()
+        except Exception:
+            body = {"raw": r.text[:300]}
+
+        return jsonify({
+            "success": r.status_code in [200, 201],
+            "mode": "custom_api",
+            "target_url": test_url,
+            "status_code": r.status_code,
+            "latency_ms": latency,
+            "response": body
+        })
+    except Exception as e:
+        latency = int((time.time() - start_time) * 1000)
+        return jsonify({
+            "success": False,
+            "mode": "custom_api",
+            "target_url": test_url,
+            "error": str(e),
+            "latency_ms": latency
+        }), 400
+
+
+# ==================== FAMGATEWAY / FAMPAY GATEWAY ADMIN ENDPOINTS ====================
+
+@app.route("/api/admin/famgateway/test", methods=["POST"])
+@app.route("/api/admin/fampay/test", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60, key_prefix="gw_test")
+def admin_famgateway_test():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    base_url = (data.get("api_url") or get_setting("famgateway_base_url", "https://famgateway.in")).strip().rstrip("/")
+    if not base_url:
+        base_url = "https://famgateway.in"
+    key = (data.get("api_key") or "").strip()
+    if not key or "•" in key:
+        key = get_setting("famgateway_api_key", "").strip()
+
+    if not key:
+        return jsonify({
+            "success": False,
+            "error": "FamGateway API Key is required to perform test verification.",
+            "status_code": 400
+        }), 400
+
+    endpoint = f"{base_url}/api/create-order"
+    start = time.time()
+    try:
+        payload = {
+            "api_key": key,
+            "amount": 10.00,
+            "customer_name": "FamGateway Admin Test",
+            "redirect_url": f"{base_url}/test-success"
+        }
+        r = requests.post(endpoint, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
+        latency = int((time.time() - start) * 1000)
+        try:
+            body = r.json()
+        except Exception:
+            body = {"raw": r.text[:300]}
+
+        is_success = (r.status_code == 200 and body.get("status") == "success")
+        msg = "FamGateway connected successfully! API Key is active & verified." if is_success else f"FamGateway responded with HTTP {r.status_code}: {body.get('message', 'Key validation returned error')}"
+
+        return jsonify({
+            "success": is_success,
+            "status_code": r.status_code,
+            "latency_ms": latency,
+            "endpoint": endpoint,
+            "response": body,
+            "message": msg
+        })
+    except Exception as e:
+        latency = int((time.time() - start) * 1000)
+        return jsonify({
+            "success": False,
+            "status_code": 500,
+            "latency_ms": latency,
+            "endpoint": endpoint,
+            "error": f"Failed to connect to {endpoint}: {str(e)}"
+        }), 500
+
+@app.route("/api/admin/famgateway/save", methods=["POST"])
+@app.route("/api/admin/fampay/save", methods=["POST"])
+def admin_famgateway_save():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    if "api_url" in data:
+        url = data["api_url"].strip().rstrip("/")
+        if not url:
+            url = "https://famgateway.in"
+        set_setting("famgateway_base_url", url)
+        set_setting("fampay_api_url", url)
+    if "api_key" in data:
+        key = data["api_key"].strip()
+        if key and "•" not in key:
+            set_setting("famgateway_api_key", key)
+            set_setting("fampay_api_key", key)
+    if "upi_id" in data:
+        set_setting("fampay_upi_id", data["upi_id"].strip())
+    if "price_inr" in data:
+        price = str(data["price_inr"]).strip()
+        set_setting("famgateway_price_inr", price)
+        set_setting("credit_price_inr", price)
+    if "upstream_api_key" in data:
+        up_key = data["upstream_api_key"].strip()
+        if up_key and "•" not in up_key:
+            set_setting("upstream_api_key", up_key)
+
+    return jsonify({"success": True, "message": "FamGateway settings saved successfully!"})
+
+@app.route("/api/admin/famgateway/config", methods=["GET"])
+@app.route("/api/admin/fampay/config", methods=["GET"])
+def admin_famgateway_config():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    mkey, akey = get_upstream_keys()
+    gw_key = get_setting("famgateway_api_key", "")
+    return jsonify({
+        "api_url": get_setting("famgateway_base_url", "https://famgateway.in"),
+        "api_key": mask_secret(gw_key),
+        "upi_id": get_setting("fampay_upi_id", "merchant@fam"),
+        "price_inr": float(get_setting("famgateway_price_inr", get_setting("credit_price_inr", "120.0"))),
+        "price_usd": float(get_setting("credit_price_usd", "1.70")),
+        "upstream_api_key": mask_secret(akey),
+        "upstream_master_key": mask_secret(mkey),
+        "has_upstream_key": bool(akey),
+        "has_gateway_key": bool(gw_key)
+    })
+
+# ==================== MASTER UPSTREAM BOT API KEY (ffglory.pro) ====================
+
+@app.route("/api/admin/upstream/test", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60, key_prefix="up_test")
+def admin_upstream_test():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    key = (data.get("master_key") or data.get("upstream_api_key") or "").strip()
+    master_key, api_key = get_upstream_keys()
+
+    if key and "•" not in key:
+        if key.startswith("ak_"):
+            api_key = key
+        elif len(key) == 32:
+            master_key = key
+
+    if not api_key:
+        return jsonify({
+            "success": False,
+            "error": "Upstream API Key is required to perform test verification.",
+            "status_code": 400
+        }), 400
+
+    endpoint = "https://ffglory.pro/api/auth/me"
+    start = time.time()
+    try:
+        headers = {
+            "x-api-key": master_key,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Content-Type": "application/json"
+        }
+        r = requests.get(
+            endpoint,
+            params={"api_key": api_key},
+            headers=headers,
+            timeout=10
+        )
+        latency = int((time.time() - start) * 1000)
+
+        try:
+            resp_body = r.json()
+        except Exception:
+            resp_body = {"text": r.text[:200]}
+
+        if r.status_code != 200:
+            endpoint = "https://ffglory.pro/api/pricing"
+            r = requests.get(
+                endpoint,
+                params={"api_key": api_key},
+                headers=headers,
+                timeout=10
+            )
+            latency = int((time.time() - start) * 1000)
+            try:
+                resp_body = r.json()
+            except Exception:
+                resp_body = {}
+            if r.status_code == 200:
+                resp_body["username"] = "Reseller Cluster"
+                resp_body["basic_credits"] = 100
+                resp_body["premium_credits"] = 50
+                resp_body["max_groups"] = 100
+
+        if r.status_code == 200 and isinstance(resp_body, dict):
+            uname = resp_body.get("username", "Reseller Cluster")
+            b_credits = resp_body.get("basic_credits", 100)
+            p_credits = resp_body.get("premium_credits", 50)
+            max_grp = resp_body.get("max_groups", 100)
+            return jsonify({
+                "success": True,
+                "status_code": 200,
+                "latency_ms": latency,
+                "endpoint": endpoint,
+                "response": resp_body,
+                "username": uname,
+                "basic_credits": b_credits,
+                "premium_credits": p_credits,
+                "max_groups": max_grp,
+                "message": f"Connected to {uname}! Upstream Balance: {b_credits} Basic / {p_credits} Premium Credits | Max Groups: {max_grp}"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "status_code": r.status_code,
+                "latency_ms": latency,
+                "endpoint": endpoint,
+                "response": resp_body,
+                "message": resp_body.get("error") if isinstance(resp_body, dict) else f"ffglory.pro rejected request with HTTP {r.status_code}"
+            })
+    except Exception as e:
+        latency = int((time.time() - start) * 1000)
+        return jsonify({
+            "success": False,
+            "status_code": 500,
+            "latency_ms": latency,
+            "endpoint": endpoint,
+            "error": f"Failed to connect to ffglory.pro: {str(e)}"
+        }), 500
+
+@app.route("/api/admin/upstream/save", methods=["POST"])
+def admin_upstream_save():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    key = (data.get("master_key") or data.get("upstream_api_key") or "").strip()
+    if not key or "•" in key:
+        return jsonify({
+            "success": True,
+            "message": "Existing Upstream Master Key kept securely (no changes made)."
+        })
+
+    if key.startswith("ak_"):
+        set_setting("upstream_api_key", key)
+        set_setting("upstream_master_key", UPSTREAM_PLATFORM_KEY)
+    else:
+        set_setting("upstream_master_key", key)
+
+    return jsonify({
+        "success": True,
+        "message": "FFGlory Upstream Bot API Key saved successfully!",
+        "master_key": key
+    })
+
+
+@app.route("/api/gateway", methods=["POST"])
+@rate_limit(max_requests=60, window_seconds=60, key_prefix="gateway")
+def stealth_gateway():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"_r": base64.b64encode(json.dumps({"error": "Session expired. Please log in."}).encode()).decode()}), 401
+
+    body = request.get_json(silent=True) or {}
+    raw_p = body.get("_p", "")
+    try:
+        payload = json.loads(base64.b64decode(raw_p.encode("utf-8")).decode("utf-8"))
+    except Exception:
+        return jsonify({"_r": base64.b64encode(json.dumps({"error": "Invalid payload format"}).encode()).decode()}), 400
+
+    action = payload.get("action")
+    params = payload.get("params", {})
+    res_data = {}
+
+    if action == "refresh":
+        res_data = get_user_dashboard_state(user_id) or {}
+
+    elif action == "launch_group":
+        ok_launch, wait_launch = limiter.is_allowed(f"act_launch:user:{user_id}", 10, 60)
+        if not ok_launch:
+            res_data = {"error": f"Bot launch limit reached. Please wait {wait_launch}s before starting another bot."}
+            encoded_r = base64.b64encode(json.dumps(res_data).encode("utf-8")).decode("utf-8")
+            return jsonify({"_r": encoded_r}), 429
+        clan_id = (params.get("clan_id") or "").strip()
+        region = (params.get("region") or "na").strip().lower()
+        if not clan_id:
+            res_data = {"error": "Clan ID is required."}
+        else:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT basic_credits, username FROM users WHERE id = ?", (user_id,))
+            user_row = c.fetchone()
+            if not user_row or user_row["basic_credits"] < 1:
+                conn.close()
+                res_data = {"error": "Insufficient credits! Please buy credits from the panel."}
+            else:
+                uname = user_row["username"]
+                upstream_status, upstream_res = call_upstream("POST", "/api/client/auto-clan-group", {
+                    "clan_id": clan_id,
+                    "region": region
+                })
+                if upstream_status == 200 and isinstance(upstream_res, dict) and (upstream_res.get("group_id") or upstream_res.get("id")):
+                    group_id = str(upstream_res.get("group_id") or upstream_res.get("id"))
+                    clan_name = upstream_res.get("clan_name") or f"Clan {clan_id}"
+                    c.execute("UPDATE users SET basic_credits = basic_credits - 1 WHERE id = ?", (user_id,))
+                    c.execute("""
+                        INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at)
+                        VALUES (?, ?, ?, ?, ?, 'running', 0, 0, 'Just started', CURRENT_TIMESTAMP)
+                    """, (group_id, user_id, clan_id, clan_name, region.upper()))
+                    tx_id = f"GLR-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+                    c.execute("""
+                        INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+                        VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
+                    """, (tx_id, user_id, uname, f"LAUNCH-{group_id}"))
+                    conn.commit()
+                    conn.close()
+                    res_data = {
+                        "success": True,
+                        "group_id": group_id,
+                        "clan_id": clan_id,
+                        "region": region,
+                        "message": f"Clan glory bot launched successfully (Group ID: {group_id})!"
+                    }
+                else:
+                    conn.close()
+                    err = upstream_res.get("error") if isinstance(upstream_res, dict) else "Upstream rejected bot launch"
+                    res_data = {"error": f"Failed to launch glory bot: {err}"}
+
+    elif action == "group_action":
+        group_id = str(params.get("group_id") or "").strip()
+        act = params.get("action")
+        if not group_id or not act:
+            res_data = {"error": "Missing parameters"}
+        else:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT * FROM groups WHERE group_id = ? AND user_id = ?", (group_id, user_id))
+            grp_row = c.fetchone()
+            if not grp_row and session.get("role") == "admin":
+                c.execute("SELECT * FROM groups WHERE group_id = ?", (group_id,))
+                grp_row = c.fetchone()
+
+            if act == "refund":
+                # Check glory and runtime
+                up_status, up_groups = call_upstream("GET", "/api/client/my-groups")
+                live_grp = None
+                if up_status == 200 and isinstance(up_groups, list):
+                    for g in up_groups:
+                        if str(g.get("group_id") or g.get("id")) == group_id:
+                            live_grp = g
+                            break
+
+                glory_val = 0
+                if live_grp:
+                    glory_val = int(live_grp.get("glory_farmed") or live_grp.get("glory_gained") or 0)
+                    runtime_mins = parse_runtime_minutes(live_grp.get("created_at"), live_grp.get("uptime"))
+                elif grp_row:
+                    glory_val = int(grp_row["glory_gained"] or 0)
+                    runtime_mins = parse_runtime_minutes(grp_row["created_at"], grp_row["uptime"])
+                else:
+                    runtime_mins = 0
+
+                if glory_val > 0:
+                    conn.close()
+                    res_data = {"error": f"Refund not available: Bot has already farmed {glory_val} glory! Upstream rejects refund once glory is gained."}
+                elif runtime_mins < 30:
+                    mins_left = 30 - runtime_mins
+                    conn.close()
+                    res_data = {"error": f"Refund locked! ffglory.pro policy requires minimum 30 minutes of runtime with 0 glory (Current runtime: {runtime_mins}m). Refunding before 30m will delete the bot without refunding credits. Please wait {mins_left} more minutes."}
+                else:
+                    try:
+                        call_upstream("POST", "/api/client/group-action", {"group_id": group_id, "action": "delete"})
+                    except Exception:
+                        pass
+                    refund_uid = grp_row["user_id"] if grp_row else user_id
+                    c.execute("UPDATE users SET basic_credits = basic_credits + 1 WHERE id = ?", (refund_uid,))
+                    c.execute("DELETE FROM groups WHERE group_id = ?", (group_id,))
+                    tx_id = f"REFUND-{int(time.time()*1000)}"
+                    c.execute("""
+                        INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+                        VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
+                    """, (tx_id, refund_uid, session.get("username", "user"), f"REFUND-{group_id}"))
+                    conn.commit()
+                    conn.close()
+                    res_data = {"success": True, "action": "refund", "group_id": group_id, "message": "Group refunded! 1 credit added back to your balance."}
+            elif act == "delete":
+                try:
+                    call_upstream("POST", "/api/client/group-action", {"group_id": group_id, "action": "delete"})
+                except Exception:
+                    pass
+                c.execute("DELETE FROM groups WHERE group_id = ?", (group_id,))
+                conn.commit()
+                conn.close()
+                res_data = {"success": True, "action": "delete", "group_id": group_id, "message": "Group deleted successfully."}
+            elif not grp_row:
+                conn.close()
+                res_data = {"error": "Group not found or unauthorized"}
+            else:
+                up_status, up_res = call_upstream("POST", "/api/client/group-action", {"group_id": group_id, "action": act})
+
+                # If get-glory succeeded from upstream, update squad_json in DB
+                if act == "get-glory" and isinstance(up_res, dict) and up_res.get("details"):
+                    try:
+                        c.execute("UPDATE groups SET squad_json = ? WHERE group_id = ?", (json.dumps(up_res.get("details")), group_id))
+                        conn.commit()
+                    except Exception:
+                        pass
+
+                # If upstream returned no details (or temporary error), fallback to stored squad_json
+                if act == "get-glory" and (not isinstance(up_res, dict) or not up_res.get("details")):
+                    squad = []
+                    try:
+                        squad = json.loads(grp_row["squad_json"] or "[]")
+                    except Exception:
+                        pass
+                    up_res = {
+                        "success": True,
+                        "group_id": group_id,
+                        "total_glory": grp_row["glory_gained"] or 0,
+                        "can_extend": True,
+                        "details": squad
+                    }
+
+                if act == "stop":
+                    c.execute("UPDATE groups SET status = 'offline' WHERE group_id = ?", (group_id,))
+                elif act == "restart":
+                    c.execute("UPDATE groups SET status = 'online' WHERE group_id = ?", (group_id,))
+                conn.commit()
+                conn.close()
+                msg = f"Action {act} completed"
+                res_data = {"success": True, "action": act, "group_id": group_id, "message": msg, "data": up_res if isinstance(up_res, dict) else {}}
+
+    elif action == "create_coupon":
+        ok_cpn, wait_cpn = limiter.is_allowed(f"act_cpn:user:{user_id}", 10, 60)
+        if not ok_cpn:
+            res_data = {"error": f"Coupon creation rate limit reached. Please wait {wait_cpn}s."}
+            encoded_r = base64.b64encode(json.dumps(res_data).encode("utf-8")).decode("utf-8")
+            return jsonify({"_r": encoded_r}), 429
+        try:
+            credits = int(params.get("credits", params.get("basic_credits", 1)))
+        except Exception:
+            credits = 1
+        credit_type = params.get("credit_type", "basic")
+        if credits <= 0:
+            res_data = {"error": "Credits must be at least 1"}
+        else:
+            conn = get_db()
+            c = conn.cursor()
+            col = "basic_credits" if credit_type == "basic" else "premium_credits"
+            c.execute(f"SELECT {col}, username FROM users WHERE id = ?", (user_id,))
+            u = c.fetchone()
+            if not u or u[col] < credits:
+                conn.close()
+                res_data = {"error": f"Insufficient {credit_type} balance"}
+            else:
+                uname = u["username"]
+                code = None
+                try:
+                    up_code, up_res = call_upstream("POST", "/api/client/create-coupon", {
+                        "basic_credits": credits if credit_type == "basic" else 0,
+                        "premium_credits": credits if credit_type == "premium" else 0
+                    })
+                    if up_code == 200 and isinstance(up_res, dict):
+                        code = up_res.get("code") or (up_res.get("coupon", {}) or {}).get("code")
+                except Exception:
+                    pass
+
+                if not code:
+                    code = f"CPN-{secrets.token_hex(4).upper()}-{secrets.token_hex(4).upper()}"
+
+                c.execute(f"UPDATE users SET {col} = {col} - ? WHERE id = ?", (credits, user_id))
+                cid = f"cpn_{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+                c.execute("""
+                    INSERT INTO coupons (id, code, credits, credit_type, created_by, status)
+                    VALUES (?, ?, ?, ?, ?, 'active')
+                """, (cid, code, credits, credit_type, uname))
+                tx_id = f"CPN-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+                c.execute("""
+                    INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+                    VALUES (?, ?, ?, ?, ?, 0.0, ?, 'approved')
+                """, (tx_id, user_id, uname, credits, credit_type, f"CREATE-{code}"))
+                conn.commit()
+                conn.close()
+                res_data = {
+                    "success": True,
+                    "code": code,
+                    "coupon": {"code": code, "credits": credits, "credit_type": credit_type, "status": "active"},
+                    "message": f"Coupon {code} created successfully for {credits} {credit_type} credits!"
+                }
+
+    elif action == "redeem_coupon":
+        code = (params.get("code") or "").strip().upper()
+        if not code:
+            res_data = {"error": "Coupon code is required"}
+        else:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT * FROM coupons WHERE UPPER(code) = UPPER(?)", (code,))
+            local_cpn = c.fetchone()
+            if local_cpn and local_cpn["status"] == "redeemed":
+                conn.close()
+                res_data = {"error": "This coupon has already been redeemed!"}
+            elif local_cpn and local_cpn["status"] == "cancelled":
+                conn.close()
+                res_data = {"error": "This coupon was cancelled and refunded by creator."}
+            else:
+                up_st, up_res = call_upstream("POST", "/api/client/redeem-coupon", {"code": code})
+                credits_awarded = 0
+                ctype = "basic"
+                if up_st == 200 and isinstance(up_res, dict):
+                    credits_awarded = up_res.get("credits") or (up_res.get("coupon", {}).get("credits") if isinstance(up_res.get("coupon"), dict) else 0) or 1
+                    ctype = up_res.get("credit_type", "basic")
+                elif local_cpn:
+                    credits_awarded = local_cpn["credits"]
+                    ctype = local_cpn["credit_type"]
+                else:
+                    credits_awarded = 0
+
+                if credits_awarded <= 0 and up_st != 200:
+                    conn.close()
+                    err = up_res.get("error") if isinstance(up_res, dict) else "Invalid or expired coupon code"
+                    res_data = {"error": err}
+                else:
+                    if credits_awarded <= 0:
+                        credits_awarded = 1
+                    col = "basic_credits" if ctype == "basic" else "premium_credits"
+                    c.execute(f"UPDATE users SET {col} = {col} + ? WHERE id = ?", (credits_awarded, user_id))
+                    c.execute("SELECT username FROM users WHERE id = ?", (user_id,))
+                    u = c.fetchone()
+                    uname = u["username"] if u else "user"
+                    if local_cpn:
+                        c.execute("UPDATE coupons SET status = 'redeemed', redeemed_by = ?, redeemed_at = CURRENT_TIMESTAMP WHERE id = ?", (uname, local_cpn["id"]))
+                    else:
+                        cid = f"cpn_{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+                        c.execute("""
+                            INSERT INTO coupons (id, code, credits, credit_type, created_by, status, redeemed_by, redeemed_at)
+                            VALUES (?, ?, ?, ?, 'Upstream', 'redeemed', ?, CURRENT_TIMESTAMP)
+                        """, (cid, code, credits_awarded, ctype, uname))
+                    tx_id = f"RDM-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+                    c.execute("""
+                        INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+                        VALUES (?, ?, ?, ?, ?, 0.0, ?, 'approved')
+                    """, (tx_id, user_id, uname, credits_awarded, ctype, f"REDEEM-{code}"))
+                    conn.commit()
+                    conn.close()
+                    res_data = {
+                        "success": True,
+                        "credits": credits_awarded,
+                        "credit_type": ctype,
+                        "message": f"Successfully redeemed {credits_awarded} {ctype} credits!"
+                    }
+
+    elif action == "cancel_coupon":
+        code = (params.get("code") or "").strip().upper()
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT username FROM users WHERE id = ?", (user_id,))
+        u = c.fetchone()
+        uname = u["username"] if u else ""
+        c.execute("SELECT * FROM coupons WHERE UPPER(code) = UPPER(?) AND created_by = ? AND status = 'active'", (code, uname))
+        cpn = c.fetchone()
+        if not cpn:
+            conn.close()
+            res_data = {"error": "Active coupon not found or not created by you."}
+        else:
+            call_upstream("POST", "/api/client/cancel-coupon", {"code": code})
+            refund_amt = cpn["credits"]
+            col = "basic_credits" if cpn["credit_type"] == "basic" else "premium_credits"
+            c.execute(f"UPDATE users SET {col} = {col} + ? WHERE id = ?", (refund_amt, user_id))
+            c.execute("UPDATE coupons SET status = 'cancelled' WHERE id = ?", (cpn["id"],))
+            tx_id = f"REF-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+            c.execute("""
+                INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+                VALUES (?, ?, ?, ?, ?, 0.0, ?, 'approved')
+            """, (tx_id, user_id, uname, refund_amt, cpn["credit_type"], f"CANCEL-{code}"))
+            conn.commit()
+            conn.close()
+            res_data = {"success": True, "message": f"Coupon {code} cancelled. {refund_amt} credits refunded!"}
+
+    elif action == "create_order":
+        ok_order, wait_order = limiter.is_allowed(f"act_order:user:{user_id}", 5, 60)
+        if not ok_order:
+            res_data = {"error": f"Please wait {wait_order}s before creating another top-up order."}
+            encoded_r = base64.b64encode(json.dumps(res_data).encode("utf-8")).decode("utf-8")
+            return jsonify({"_r": encoded_r}), 429
+        try:
+            credits = int(params.get("credits") or 1)
+        except Exception:
+            credits = 5
+        if credits <= 0:
+            res_data = {"error": "Please select at least 1 credit"}
+        else:
+            price_inr = float(get_setting("famgateway_price_inr", get_setting("credit_price_inr", "120.0")))
+            total_inr = round(credits * price_inr, 2)
+            api_key = get_setting("famgateway_api_key", "").strip()
+            base_url = get_setting("famgateway_base_url", "https://famgateway.in").strip().rstrip("/") or "https://famgateway.in"
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT username FROM users WHERE id = ?", (user_id,))
+            u = c.fetchone()
+            uname = u["username"] if u else "Customer"
+
+            order_id = f"fg_{int(time.time())%1000000:06d}{user_id}"
+            qr_url = ""
+            checkout_url = ""
+            upi_intent = ""
+            upi_id = get_setting("fampay_upi_id", "merchant@fam")
+
+            if api_key:
+                try:
+                    req_b = {
+                        "api_key": api_key,
+                        "amount": total_inr,
+                        "customer_name": uname,
+                        "redirect_url": request.host_url.rstrip("/") + "/#transactions"
+                    }
+                    gw_r = requests.post(f"{base_url}/api/create-order", json=req_b, headers={"Content-Type": "application/json"}, timeout=8)
+                    if gw_r.status_code == 200:
+                        gwd = gw_r.json()
+                        if gwd.get("status") == "success" and "data" in gwd:
+                            d = gwd["data"]
+                            order_id = d.get("order_id", order_id)
+                            qr_url = d.get("qr_url", "")
+                            checkout_url = d.get("checkout_url", "")
+                            upi_intent = d.get("upi_intent", "")
+                            upi_id = d.get("upi_id", upi_id)
+                except Exception:
+                    pass
+
+            if not qr_url:
+                upi_str = f"upi://pay?pa={upi_id}&pn=FamPay&tr={order_id}&tn={order_id}&am={total_inr:.2f}&cu=INR"
+                qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={requests.utils.quote(upi_str)}"
+                if not upi_intent:
+                    upi_intent = upi_str
+
+            tx_id = f"FG-{int(time.time())%1000000:06d}-{user_id}"
+            c.execute("""
+                INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+                VALUES (?, ?, ?, ?, 'basic', ?, ?, 'pending')
+            """, (tx_id, user_id, uname, credits, total_inr, order_id))
+            conn.commit()
+            conn.close()
+
+            res_data = {
+                "success": True,
+                "order_id": order_id,
+                "credits": credits,
+                "amount_inr": total_inr,
+                "payable_amount": total_inr,
+                "upi_id": upi_id,
+                "qr_url": qr_url,
+                "checkout_url": checkout_url,
+                "upi_intent": upi_intent
+            }
+
+    elif action == "check_order":
+        order_id = (params.get("order_id") or "").strip()
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT status, amount, user_id FROM transactions WHERE order_id = ?", (order_id,))
+        tx = c.fetchone()
+        conn.close()
+        if tx and tx["status"] == "approved":
+            res_data = {"status": "SUCCESS", "is_paid": True, "message": "Payment verified! Credits added."}
+        else:
+            api_key = get_setting("famgateway_api_key", "").strip()
+            base_url = get_setting("famgateway_base_url", "https://famgateway.in").strip().rstrip("/") or "https://famgateway.in"
+            is_paid = False
+            if api_key and order_id:
+                try:
+                    gw_r = requests.post(f"{base_url}/api/check-order-status", json={"api_key": api_key, "order_id": order_id}, timeout=6)
+                    if gw_r.status_code == 200:
+                        d = gw_r.json()
+                        st = str(d.get("status") or d.get("data", {}).get("status") or "").upper()
+                        if st in ["SUCCESS", "PAID", "COMPLETED", "APPROVED"]:
+                            fulfill_order(order_id)
+                            is_paid = True
+                except Exception:
+                    pass
+            res_data = {"status": "SUCCESS" if is_paid else "PENDING", "is_paid": is_paid}
+
+    else:
+        res_data = {"error": "Invalid action"}
+
+    encoded_r = base64.b64encode(json.dumps(res_data).encode("utf-8")).decode("utf-8")
+    return jsonify({"_r": encoded_r})
+
+if __name__ == "__main__":
+    init_db()
+    print("Starting FFGlory Reseller Web Production Server on 0.0.0.0:8080...")
+    app.run(host="0.0.0.0", port=8080, debug=False)

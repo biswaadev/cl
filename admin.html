@@ -1,0 +1,2327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>FFGlory Reseller Admin Console</title>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <link rel="icon" type="image/png" sizes="96x96" href="https://www.ffglory.pro/assets/ffglory-logo-96.png">
+    <link rel="shortcut icon" href="https://www.ffglory.pro/assets/ffglory-logo-96.png">
+    <link rel="apple-touch-icon" href="https://www.ffglory.pro/assets/ffglory-logo-96.png">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Rajdhani:wght@500;600;700&family=Roboto+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="shared.css?v=bc2e8cea78">
+    <style id="user-panel-polish">
+        /* Keep the user panel calm and consistent without changing shared/admin pages. */
+        #user-view {
+            width: 100%;
+            max-width: 1600px;
+            margin-inline: auto;
+        }
+
+        #user-view .ng-card {
+            border-color: #2b2b2b;
+            border-radius: 20px;
+            background: linear-gradient(180deg, #171717 0%, #141414 100%);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        }
+
+        #user-view .ng-card::before { opacity: 0; }
+        #user-view .ng-card:hover {
+            border-color: #393939;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
+        }
+
+        #user-view .ng-section-title {
+            gap: 10px;
+            color: var(--ng-text);
+            font-size: 17px;
+            line-height: 1.35;
+        }
+
+        #user-view .ng-section-icon {
+            flex: 0 0 40px;
+            border: 1px solid rgba(245, 230, 211, 0.18) !important;
+            border-radius: 12px;
+            background: rgba(245, 230, 211, 0.07) !important;
+        }
+
+        #user-view .ng-section-icon svg { color: var(--ng-cream) !important; }
+        #user-view .ng-section-title > span:first-of-type { color: var(--ng-text) !important; }
+
+        #user-view .ng-badge-primary,
+        #user-view .ng-badge-warning {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 9px;
+            border: 1px solid rgba(245, 230, 211, 0.16);
+            border-radius: 999px;
+            background: rgba(245, 230, 211, 0.06);
+            color: var(--ng-text-muted);
+            font-size: 11px;
+            font-weight: 500;
+            line-height: 1.3;
+            white-space: nowrap;
+        }
+
+        #buy-credits-content .buy-lang-btn {
+            min-height: 34px;
+            padding: 5px 10px !important;
+            border: 1px solid transparent;
+            border-radius: 9px !important;
+            background: transparent;
+            color: var(--ng-text-muted);
+        }
+
+        #buy-credits-content .buy-lang-btn[class*="bg-blue-500/20"] {
+            border-color: rgba(245, 230, 211, 0.2) !important;
+            background: rgba(245, 230, 211, 0.1) !important;
+            color: var(--ng-cream) !important;
+        }
+
+        #buy-credits-content > .mb-4 > .rounded-xl {
+            border-color: #2d2d2d !important;
+            background: #141414 !important;
+        }
+
+        #buy-credits-content h3[data-i18n="basic_credits"],
+        #buy-basic-subtotal { color: var(--ng-cream) !important; }
+
+        #buy-basic-credits-amount {
+            height: 44px;
+            border-color: #343434;
+            border-radius: 10px;
+            background: #101010;
+        }
+
+        #region-price-indicator {
+            flex-wrap: wrap;
+            row-gap: 4px;
+            color: var(--ng-text-muted);
+        }
+
+        #region-credit-cost,
+        #region-usd-price {
+            color: var(--ng-cream) !important;
+            font-weight: 600;
+        }
+
+        #buy-credits-content button[onclick^="adjustBuyCredits"] {
+            width: 40px;
+            min-height: 40px;
+            border: 1px solid #303030;
+            border-radius: 10px;
+            background: #1c1c1c;
+            color: #c4c4c4;
+        }
+
+        #buy-credits-content button[onclick^="quickBuyBasic"] {
+            min-height: 34px;
+            border: 1px solid #303030;
+            border-radius: 9px;
+            background: #1a1a1a;
+            color: var(--ng-text-muted);
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        #buy-credits-content button[onclick^="quickBuyBasic"]:hover {
+            border-color: rgba(245, 230, 211, 0.25);
+            background: rgba(245, 230, 211, 0.08);
+            color: var(--ng-cream);
+        }
+
+        #buy-credits-content > div.flex.items-center.justify-between {
+            border-color: #303030 !important;
+            background: #101010 !important;
+        }
+
+        #buy-credits-content > div.flex.items-center.justify-between > span:nth-child(2),
+        #buy-total-amount { color: var(--ng-cream) !important; }
+
+        #buy-credits-content .binance-pay-glow {
+            border-width: 1px !important;
+            border-color: rgba(240, 185, 11, 0.28) !important;
+            border-radius: 18px !important;
+            background: linear-gradient(145deg, rgba(240, 185, 11, 0.045), #141414 62%, #17130b) !important;
+            box-shadow: none;
+        }
+
+        #buy-credits-content .binance-pay-glow > button[onclick="openBinancePay()"] {
+            min-height: 46px;
+            border-radius: 12px;
+            box-shadow: 0 4px 14px rgba(240, 185, 11, 0.12);
+        }
+
+        #buy-credits-content div:has(> #buy-order-id) {
+            border-color: #303030 !important;
+            border-radius: 18px;
+            background: #141414 !important;
+        }
+
+        #buy-order-id {
+            min-height: 46px;
+            border-color: #343434 !important;
+            border-radius: 12px;
+            background: #101010 !important;
+        }
+
+        #buy-credits-content div:has(> #buy-order-id) h4 { color: var(--ng-text) !important; }
+
+        #user-view .user-sidebar-btn {
+            min-height: 44px;
+            border-radius: 12px;
+        }
+
+        #user-view .user-sidebar-btn-active {
+            border-left: 0;
+            box-shadow: inset 0 0 0 1px rgba(245, 230, 211, 0.12);
+        }
+
+        #refresh-my-groups {
+            min-height: 42px;
+            border: 1px solid var(--ng-border) !important;
+            border-radius: 12px;
+            background: transparent !important;
+            box-shadow: none !important;
+            color: var(--ng-text-muted) !important;
+        }
+
+        #refresh-my-groups:hover {
+            border-color: var(--ng-border-hover) !important;
+            background: rgba(255, 255, 255, 0.04) !important;
+            color: var(--ng-text) !important;
+        }
+
+        #launch-btn {
+            min-height: 48px;
+            border: 1px solid transparent;
+            border-radius: 14px;
+            background: linear-gradient(135deg, var(--ng-cream), var(--ng-warm));
+            color: #171717;
+            box-shadow: 0 4px 14px rgba(245, 230, 211, 0.1);
+            transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        #launch-btn:not(:disabled):hover {
+            box-shadow: 0 6px 18px rgba(245, 230, 211, 0.18);
+            filter: brightness(1.04);
+        }
+
+        #launch-btn:disabled {
+            border-color: #343434;
+            background: #222 !important;
+            box-shadow: none !important;
+            color: #999 !important;
+            cursor: not-allowed;
+            filter: none;
+            opacity: 1;
+        }
+
+        #launch-btn:disabled svg { color: #888 !important; }
+
+        #user-view input::placeholder { color: #777; }
+
+        #user-view :is(button, a, input, select, [role="button"]):focus-visible {
+            outline: 2px solid var(--ng-cream);
+            outline-offset: 3px;
+        }
+
+        #user-mobile-tabs {
+            background: rgba(14, 14, 14, 0.96);
+            border-top-color: #2b2b2b;
+            box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.22);
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
+
+        #user-mobile-tabs .mob-tab {
+            flex: 1 1 0%;
+            min-width: 0;
+            min-height: 56px;
+            padding-inline: 4px;
+            border-radius: 12px;
+            color: #858585;
+        }
+
+        #user-mobile-tabs .mob-tab-active {
+            background: rgba(245, 230, 211, 0.08);
+            color: var(--ng-cream);
+        }
+
+        @media (max-width: 420px) {
+            #user-section-dashboard .ng-section-title {
+                column-gap: 7px;
+                row-gap: 6px;
+            }
+
+            #user-view .ng-badge-primary,
+            #user-view .ng-badge-warning { font-size: 10px; }
+
+
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #user-view *, #user-view *::before, #user-view *::after {
+                scroll-behavior: auto !important;
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        /* Basic-credit checkout: one amount and three clear steps. */
+        #buy-credits-content .checkout-step { padding: 20px 0; border-top: 1px solid #303030; }
+        #buy-credits-content .checkout-step-heading { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+        #buy-credits-content .checkout-step-number { display: grid; place-items: center; flex: 0 0 28px; height: 28px; border: 1px solid #494137; border-radius: 50%; color: var(--ng-cream); font-size: 12px; font-weight: 600; }
+        #buy-credits-content .checkout-step h3 { margin: 2px 0 5px; color: var(--ng-text); font-size: 15px; font-weight: 600; }
+        #buy-credits-content .checkout-step-heading p,
+        #buy-credits-content .checkout-help { color: #a5a5a5; font-size: 12px; line-height: 1.65; }
+        #buy-credits-content .checkout-help { margin-top: 10px; }
+        #buy-credits-content .checkout-label { display: block; margin-bottom: 8px; color: #bdbdbd; font-size: 12px; }
+        #buy-credits-content .checkout-quantity { display: flex; gap: 8px; }
+        #buy-credits-content .checkout-quantity input { width: 0; flex: 1; min-width: 0; text-align: center; font-size: 18px; font-weight: 600; }
+        #buy-credits-content .checkout-quantity button { height: 44px; width: 44px; font-size: 20px; }
+        #buy-credits-content .checkout-presets { display: flex; gap: 8px; margin-top: 10px; }
+        #buy-credits-content .checkout-presets button { flex: 1; min-height: 40px; font-size: 12px; }
+        #buy-credits-content .checkout-presets button[aria-pressed="true"] { color: var(--ng-cream); border-color: #9c8b73; background: #302a22; }
+        #buy-credits-content .checkout-total { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; padding: 16px; border: 1px solid #403a32; border-radius: 12px; background: #201e1a; }
+        #buy-credits-content .checkout-total span { font-size: 14px; }
+        #buy-credits-content .checkout-total p { margin-top: 3px; font-size: 11px; color: #a5a5a5; }
+        #buy-credits-content .checkout-total strong { color: var(--ng-cream); white-space: nowrap; }
+        #buy-credits-content .checkout-total #buy-total-amount { font-size: 24px; }
+        #buy-credits-content .checkout-total small { font-size: 11px; font-weight: 500; }
+        #buy-credits-content .checkout-recipient { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; background: #101010; border: 1px solid #343434; border-radius: 12px; }
+        #buy-credits-content .checkout-recipient .checkout-label { margin-bottom: 4px; }
+        #buy-credits-content .checkout-recipient strong { font: 600 18px 'Roboto Mono', monospace; overflow-wrap: anywhere; }
+        #buy-credits-content .checkout-recipient button { flex-shrink: 0; padding: 10px 12px; border: 1px solid #454545; border-radius: 8px; font-size: 12px; color: var(--ng-cream); }
+        #buy-credits-content .checkout-pay-button,
+        #buy-credits-content .checkout-confirm-button { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px; width: 100%; min-height: 46px; padding: 12px; margin-top: 14px; border-radius: 12px; font-size: 14px; font-weight: 600; }
+        #buy-credits-content .checkout-pay-button { background: #f0b90b; color: #1e2329; }
+        #buy-credits-content .checkout-confirm-button { background: var(--ng-cream); color: #201d18; }
+        #buy-credits-content .checkout-pay-button:disabled,
+        #buy-credits-content .checkout-confirm-button:disabled { opacity: .4; cursor: not-allowed; }
+        #buy-credits-content .checkout-footnote { text-align: center; font-size: 11px; }
+        #buy-credits-content .checkout-confirm { padding-bottom: 0; }
+        /* Gaming typography with readable body copy and payment identifiers. */
+        #user-view h1,
+        #user-view h2,
+        #user-view h3,
+        #user-view h4,
+        #user-view button,
+        #user-mobile-tabs button,
+        .topnav-brand,
+        .topnav-credits-val,
+        #buy-total-amount,
+        #buy-basic-credits-amount,
+        #region-credit-cost,
+        #region-usd-price {
+            font-family: 'Rajdhani', 'Inter', sans-serif;
+            font-weight: 600;
+            letter-spacing: 0.025em;
+        }
+
+        #user-view .ng-section-title { font-size: 20px; font-weight: 700; }
+        #buy-credits-content .checkout-step h3 { font-size: 18px; font-weight: 700; }
+        #buy-credits-content .checkout-pay-button,
+        #buy-credits-content .checkout-confirm-button { font-size: 17px; font-weight: 700; }
+        #buy-credits-content .checkout-total #buy-total-amount { font-size: 29px; font-weight: 700; }
+        #user-view .ng-badge-primary,
+        #user-view .ng-badge-warning { font-family: 'Inter', sans-serif; letter-spacing: normal; }
+
+        #active-groups-panel > .flex { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+        #active-groups-panel #my-groups-count { padding: 3px 8px; border-radius: 8px; background: #292723; color: var(--ng-cream); }
+        #active-groups-panel #groups-limit-fill { background: #bba787; }
+        #active-groups-panel .clan-header { background: #191919; border-color: #343434; border-radius: 14px; box-shadow: none; padding: 16px; }
+        #active-groups-panel .clan-header > .absolute,
+        #active-groups-panel .clan-header .hidden.md\:flex,
+        #active-groups-panel .clan-header .cursor-pointer { display: none; }
+        #active-groups-panel .clan-header h3 { color: var(--ng-cream); letter-spacing: .025em; text-transform: none; }
+        #active-groups-panel .clan-header .border-2 { border: 1px solid #514a3d; }
+        #active-groups-panel .clan-header [id^="clan-level-"] { background: #d7c5aa; }
+        #active-groups-panel .clan-header [class*="text-[#ffd700]"] { color: #c7b79f; }
+        #active-groups-panel .clan-header .text-blue-400 { color: #a9b2bc; }
+        #active-groups-panel .clan-image-fallback { display: grid; place-items: center; height: 100%; background: #26241e; color: #d7c5aa; }
+        #active-groups-panel .clan-image-fallback svg { width: 30px; height: 30px; }
+        /* Preserve the original card hierarchy and all visible action controls. */
+        #active-groups-panel .group-card { border: 1px solid #40382c; border-radius: 16px; padding: 18px; background: linear-gradient(145deg, #1b1813, #141414 65%); }
+        #active-groups-panel .group-shield { width: 48px; height: 48px; flex-shrink: 0; border-radius: 12px; background: #2c251a; border: 1px solid #51432b; box-shadow: none; }
+        #active-groups-panel .group-classic-heading h3 { font-size: 17px; letter-spacing: .025em; }
+        #active-groups-panel .group-stat { font: 11px 'Inter', sans-serif; color: #aaa; }
+        #active-groups-panel .group-stat-value { color: #ddd4c5; }
+        #active-groups-panel [id^="glory-time-"] { font-size: 10px; color: #999; margin-top: 3px; }
+        #active-groups-panel .group-classic-stats { flex-wrap: wrap; gap: 10px 14px; padding: 13px 0; margin: 14px 0; border-top: 1px solid #332e27; border-bottom: 1px solid #332e27; }
+        #active-groups-panel .group-classic-stats > .w-px { display: none; }
+        #active-groups-panel .group-classic-stats > div { min-width: 0; }
+        #active-groups-panel .group-classic-stats > div[title] { flex: 1 1 100%; }
+        #active-groups-panel .group-classic-stats span.text-sm { font: 600 15px 'Rajdhani', sans-serif; color: #eddfc7; }
+        #active-groups-panel .group-classic-stats span.text-\[11px\] { color: #aaa; font-size: 12px; }
+        #active-groups-panel .group-classic-actions { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; margin-top: 16px; }
+        #active-groups-panel .group-classic-actions > button { min-width: 0; width: 100%; min-height: 42px; border-radius: 10px; padding: 10px 12px; font-size: 15px; font-weight: 600; box-shadow: none; }
+        #active-groups-panel .group-classic-actions > button.w-full { grid-column: 1 / -1; }
+        #active-groups-panel .group-classic-actions .ng-btn-warning { background: #c79b44; color: #211b10; border: 1px solid #d1a853; }
+        #active-groups-panel .group-classic-actions .ng-btn-purple { background: #e4d3b8; color: #292117; border: 1px solid #e4d3b8; }
+        #active-groups-panel .group-classic-actions .ng-btn-danger { background: #492428; color: #f0b2b4; border: 1px solid #784047; }
+        #active-groups-panel .group-classic-actions .ng-btn-outline { background: #181818; }
+        #active-groups-panel .group-classic-actions button:hover:not(:disabled) { filter: brightness(1.12); }
+        #active-groups-panel .group-classic-actions button:disabled { opacity: .5; cursor: not-allowed; }
+        @media (max-width: 380px) {
+            #active-groups-panel .group-shield { display: none; }
+            #active-groups-panel .group-card { padding: 14px; }
+        }
+
+        /* Leaderboard-inspired clan banners and full-width group rows. */
+        #active-groups-panel .clan-header { background: linear-gradient(110deg,#584222 0%,#30271b 48%,#1d1b18 100%); border: 1px solid #79613d; border-left: 3px solid #d6b777; border-radius: 8px; padding: 18px; gap: 18px; }
+        #active-groups-panel .clan-header h3 { font: 700 25px/1.15 'Rajdhani',sans-serif; color: #f4e4c5; }
+        #active-groups-panel .clan-header > .flex { min-width: 0; }
+        #active-groups-panel .clan-header > .flex:first-of-type { flex: 1; }
+        #active-groups-panel .clan-header [id^="clan-total-glory-"] { color: #f8deb0; font: 700 34px/1.1 'Rajdhani',sans-serif; font-variant-numeric: tabular-nums; }
+        #active-groups-panel .clan-header .leaderboard-identity { min-width: 0; gap: 12px; }
+        #active-groups-panel .leaderboard-identity > div:last-child > .flex { flex-wrap: wrap; row-gap: 4px; }
+        #active-groups-panel .leaderboard-group-list { grid-template-columns: minmax(0,1fr); gap: 10px; }
+        #active-groups-panel .group-card { border-radius: 8px; border-color: #39352f; border-left: 3px solid #77654a; background: linear-gradient(110deg,#23211e,#181818 70%); padding: 16px 18px; }
+        #active-groups-panel .group-classic-heading { display: grid; grid-template-columns: 40px minmax(0,1fr) auto; align-items: center; gap: 12px; margin-bottom: 0; }
+        #active-groups-panel .group-shield { width: 40px; height: 44px; border-radius: 6px; background: #322a1e; }
+        #active-groups-panel .group-classic-heading h3 { font-size: 19px; }
+        #active-groups-panel .leaderboard-score { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 76px; padding-left: 12px; border-left: 1px solid #484033; }
+        #active-groups-panel .leaderboard-score > svg { display: none; }
+        #active-groups-panel .leaderboard-score > span:first-of-type { font: 500 10px 'Inter',sans-serif; text-transform: uppercase; letter-spacing: .08em; color: #b9a17d; }
+        #active-groups-panel .leaderboard-score [id^="glory-val-"] { font: 700 30px/1.1 'Rajdhani',sans-serif; color: #ead09b; font-variant-numeric: tabular-nums; }
+        #active-groups-panel .group-classic-stats { margin: 12px 0; padding: 10px 0; }
+        #active-groups-panel .group-classic-stats > div[title] { flex: 0 1 auto; }
+        #active-groups-panel .group-classic-actions { grid-template-columns: repeat(auto-fit,minmax(130px,1fr)); margin-top: 12px; gap: 8px; }
+        #active-groups-panel .group-classic-actions > button { min-height: 44px; border-radius: 7px; }
+        @media(max-width:767px) {
+            #active-groups-panel .clan-header { align-items: stretch; padding: 14px; gap: 12px; }
+            #active-groups-panel .clan-header > .flex:last-child { margin-top: 0; padding-top: 12px; border-top: 1px solid #715c393f; gap: 12px; }
+            #active-groups-panel .clan-header [id^="clan-total-glory-"] { font-size: 28px; }
+            #active-groups-panel .group-classic-heading { grid-template-columns: minmax(0,1fr) auto; gap: 8px; }
+            #active-groups-panel .group-shield { display: none; }
+            #active-groups-panel .group-classic-heading > .flex-1 > .flex:first-child { flex-wrap: wrap; }
+            #active-groups-panel .group-card { padding: 14px 12px; }
+            #active-groups-panel .group-classic-heading h3 { font-size: 16px; }
+            #active-groups-panel .leaderboard-score { min-width: 58px; padding-left: 8px; }
+            #active-groups-panel .leaderboard-score [id^="glory-val-"] { font-size: 26px; }
+            #active-groups-panel .group-classic-actions { grid-template-columns: repeat(2,minmax(0,1fr)); }
+        }
+
+        #active-groups-panel .group-card { padding: 20px; }
+        #active-groups-panel .group-classic-heading { gap: 16px; }
+        #active-groups-panel .group-stat { line-height: 1.7; }
+        #active-groups-panel .group-classic-stats { padding: 14px 0; margin: 16px 0; gap: 12px 20px; }
+        #active-groups-panel .group-runtime-progress { margin: 16px 0 20px; padding: 4px 0; }
+        #active-groups-panel .group-runtime-progress > div:first-child { flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+        #active-groups-panel .group-runtime-progress > div:last-child { height: 8px; }
+        #active-groups-panel .group-runtime-progress .transition-all { transition-property: width; }
+        #groups-refresh-status { min-height: 18px; margin: -8px 0 14px; color: #9cafa2; font: 11px/1.6 Inter,sans-serif; }
+        #groups-refresh-status[data-error="true"] { color: #e6a5a5; }
+        #refresh-my-groups { min-width: 126px; }
+        #refresh-my-groups:disabled { cursor: wait; opacity: 1; }
+        #refresh-my-groups.is-refreshing .refresh-icon { animation: spin .9s linear infinite; }
+        @media(prefers-reduced-motion:reduce) { #refresh-my-groups.is-refreshing .refresh-icon { animation: none; } }
+        @media(max-width:767px) {
+            #active-groups-panel .group-card { padding: 18px 16px; }
+            #active-groups-panel .group-classic-heading { gap: 10px; }
+            #active-groups-panel .clan-header { padding: 18px 16px; }
+        }
+
+        #region-picker { position: relative; margin-top: 8px; }
+        #region-picker[hidden], #region-picker-menu[hidden], #region-picker-empty[hidden] { display: none; }
+        #region-picker #region-picker-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; padding: 12px 15px; border: 1px solid #484035; border-radius: 12px; background: linear-gradient(135deg,#211e19,#151515); color: #eee3d2; text-align: start; font: 500 14px 'Inter',sans-serif; letter-spacing: normal; }
+        #region-picker #region-picker-toggle:hover { border-color: #89775b; }
+        #region-picker #region-picker-toggle[aria-expanded="true"] { border-color: #bca17a; box-shadow: 0 0 0 3px #bca17a18; }
+        #region-picker .region-picker-arrow { color: #d7bc92; transition: transform .15s; font-size: 20px; }
+        #region-picker-toggle[aria-expanded="true"] .region-picker-arrow { transform: rotate(180deg); }
+        #region-picker-menu { position: absolute; z-index: 40; top: calc(100% + 8px); inset-inline: 0; padding: 10px; background: #1b1a18; border: 1px solid #514637; border-radius: 14px; box-shadow: 0 18px 42px #0009; }
+        .region-search-field { position: relative; flex-shrink: 0; margin-bottom: 4px; border-radius: 11px; background: #121211; }
+        .region-search-icon { position: absolute; left: 14px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); color: #a99b86; pointer-events: none; }
+        #region-picker-search { display: block; box-sizing: border-box; width: 100%; min-width: 0; min-height: 48px; padding: 12px 48px 12px 42px; border: 1px solid #494239; border-radius: 11px; background: transparent; color: #f1e8db; font: 600 18px/1.4 'Rajdhani','Inter',sans-serif; letter-spacing: .02em; -webkit-appearance: none; appearance: none; transition: border-color .15s, box-shadow .15s; }
+        #region-picker-search::placeholder { color: #97918a; opacity: 1; }
+        #region-picker-search:hover { border-color: #72624d; }
+        #region-picker-menu #region-picker-search:focus { outline: none; border-color: #c3aa83; box-shadow: 0 0 0 3px rgba(195,170,131,.12); }
+        #region-picker-search::-webkit-search-cancel-button, #region-picker-search::-webkit-search-decoration { -webkit-appearance: none; }
+        #region-search-clear { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 9px; background: transparent; color: #aaa198; cursor: pointer; }
+        #region-search-clear[hidden] { display: none; }
+        #region-search-clear:hover { background: #2c2721; color: #f5e6d3; }
+        #region-search-clear svg { width: 16px; height: 16px; }
+        #region-picker-options { max-height: 240px; overflow-y: auto; overscroll-behavior: contain; padding-top: 7px; }
+        #region-picker-options button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 42px; padding: 10px; margin: 2px 0; border: 1px solid transparent; border-radius: 8px; text-align: start; color: #ccc; font: 13px 'Inter',sans-serif; letter-spacing: normal; }
+        #region-picker-options button:hover:not(:disabled) { background: #302a21; color: #fff; }
+        #region-picker-options button[aria-pressed="true"] { background: #352d21; border-color: #675435; color: #f5e6d3; }
+        #region-picker-options button:disabled { opacity: .45; cursor: not-allowed; }
+        #region-picker-options .region-option-state { flex-shrink: 0; color: #cdb68f; font-size: 11px; }
+        .region-extend-on { color: #34d399; font-weight: 600; }
+        #region-picker-empty { padding: 18px 10px; text-align: center; font-size: 13px; color: #aaa; }
+        .region-picker-hint { margin-top: 8px; color: #999; font: 11px/1.6 'Inter',sans-serif; }
+
+        #confirm-modal { background: rgba(0,0,0,.76); }
+        .confirm-launch-card { width: 100%; max-width: 440px; max-height: calc(100dvh - 32px); overflow-y: auto; padding: 24px; background: linear-gradient(145deg,#211e19,#151515 65%); border: 1px solid #514636; border-radius: 20px; box-shadow: 0 24px 80px #0009; color: #eee6d9; font-family: 'Inter',sans-serif; }
+        .confirm-launch-heading { display: flex; align-items: center; gap: 12px; }
+        .confirm-launch-icon { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid #594b35; border-radius: 12px; background: #30291e; color: #ddc197; }
+        .confirm-launch-icon svg { width: 25px; height: 25px; }
+        .confirm-launch-eyebrow { color: #b6a181; font-size: 10px; font-weight: 600; letter-spacing: .12em; }
+        #confirm-launch-title { margin: 1px 0 0; font: 700 27px/1.2 'Rajdhani',sans-serif; }
+        .confirm-dismiss { margin-inline-start: auto; align-self: flex-start; width: 36px; height: 36px; color: #aaa; border: 1px solid #39352e; border-radius: 9px; font-size: 24px; }
+        #confirm-launch-description { margin: 18px 0; color: #aaa; font-size: 13px; line-height: 1.6; }
+        .confirm-launch-summary { padding: 4px 16px; background: #111; border: 1px solid #39342c; border-radius: 12px; }
+        .confirm-launch-summary > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; }
+        .confirm-launch-summary > div + div { border-top: 1px solid #2b2823; }
+        .confirm-launch-summary dt { flex-shrink: 0; font-size: 12px; color: #aaa; }
+        .confirm-launch-summary dd { text-align: end; font-size: 13px; overflow-wrap: anywhere; }
+        #confirm-clan { font-family: 'Roboto Mono',monospace; }
+        .confirm-launch-cost dd { display: flex; flex-direction: column; gap: 3px; }
+        #confirm-credits { color: #ebd2ac; font: 700 20px 'Rajdhani',sans-serif; }
+        #confirm-price { color: #999; font-size: 12px; }
+        .confirm-launch-checklist { margin-top: 20px; }
+        .confirm-launch-checklist h4 { margin-bottom: 10px; font: 600 18px 'Rajdhani',sans-serif; }
+        .confirm-launch-checklist p { display: flex; gap: 10px; margin: 9px 0; font-size: 12px; color: #bbb; line-height: 1.6; }
+        .confirm-launch-checklist p > span { display: grid; place-items: center; flex: 0 0 22px; height: 22px; border-radius: 6px; background: #2c2821; color: #d8c19d; font-size: 11px; }
+        .confirm-launch-note { color: #999; font-size: 11px; line-height: 1.7; margin: 18px 0; }
+        .confirm-launch-actions { display: grid; grid-template-columns: 1fr 1.65fr; gap: 10px; }
+        .confirm-launch-actions button { min-height: 46px; padding: 10px; border-radius: 10px; font: 700 17px 'Rajdhani',sans-serif; }
+        .confirm-cancel { border: 1px solid #494137; color: #c8c0b4; background: transparent; }
+        #confirm-proceed-btn { background: #ead7b9; color: #261f15; border: 1px solid #ead7b9; }
+        #confirm-modal button:disabled { opacity: .5; cursor: not-allowed; }
+        #confirm-modal button:focus-visible { outline: 2px solid #ecd7b4; outline-offset: 3px; }
+        #launch-progress-label { color: #e4ccaa; }
+        #launch-progress-bar { background: #c5a676; }
+        @media(max-width:380px) { .confirm-launch-card { padding: 18px; } }
+        #launch-progress { padding: 16px; margin-top: 18px; border: 1px solid #514636; background: #15130f; border-radius: 12px; }
+        #launch-progress-label { line-height: 1.6; }
+        .launch-live-stats { display: flex; justify-content: space-between; gap: 12px; margin: 14px 0; }
+        .launch-live-stats > div { display: flex; flex-direction: column; gap: 4px; }
+        .launch-live-stats span { color: #aaa; font-size: 11px; }
+        .launch-live-stats strong { color: #eee3d2; font: 600 25px/1.2 'Rajdhani',sans-serif; font-variant-numeric: tabular-nums; }
+        #launch-live-status { display: flex; align-items: center; gap: 10px; min-height: 22px; margin-top: 12px; font-size: 11px; line-height: 1.5; color: #b7aa96; }
+        #launch-progress[data-state="working"] #launch-live-status::before { content: ''; display: block; flex: 0 0 18px; width: 18px; height: 18px; box-sizing: border-box; border: 2px solid rgba(197,166,118,.18); border-top-color: #e4ccaa; border-right-color: #c5a676; border-radius: 50%; animation: launchSpinner .8s linear infinite; }
+        @keyframes launchSpinner { to { transform: rotate(360deg); } }
+        @media(prefers-reduced-motion:reduce) { #launch-progress[data-state="working"] #launch-live-status::before { animation: none; } }
+        #launch-progress > div:first-child { flex-wrap: wrap; gap: 6px; }
+        .launch-in-progress .confirm-launch-checklist,
+        .launch-in-progress .confirm-launch-note:not(#launch-progress-detail),
+        .launch-in-progress .confirm-cancel { display: none; }
+        .launch-in-progress .confirm-launch-actions { grid-template-columns: 1fr; }
+        .launch-indeterminate { animation: launch-wait 1.4s ease-in-out infinite alternate; }
+        @keyframes launch-wait { from { transform: translateX(0); } to { transform: translateX(230%); } }
+        @media(prefers-reduced-motion:reduce) { .launch-indeterminate { animation: none; } }
+        #region-picker-menu { position: fixed; z-index: 100; display: flex; flex-direction: column; box-sizing: border-box; inset-inline: auto; max-height: none; }
+        #region-picker-search { flex-shrink: 0; }
+        #region-picker-options { flex: 1; min-height: 0; max-height: none; scrollbar-gutter: stable; }
+        #region-picker-options button { min-height: 46px; }
+        #region-picker-menu { transform-origin: top center; animation: regionMenuEnter .24s cubic-bezier(.2,.8,.2,1) both; padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)); }
+        #region-picker-menu.region-menu-closing { animation: regionMenuExit .16s ease-in both; pointer-events: none; }
+        #region-picker-options { -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+        #region-picker-options button { transition: background-color .15s, border-color .15s, color .15s; }
+        #region-picker-menu :focus-visible { outline: 2px solid #d7bc92; outline-offset: -2px; }
+        @keyframes regionMenuEnter { from { opacity: 0; transform: translateY(-8px) scaleY(.97); } to { opacity: 1; transform: none; } }
+        @keyframes regionMenuExit { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-6px) scaleY(.98); } }
+        @media(prefers-reduced-motion: reduce) {
+            #region-picker-menu, #region-picker-menu.region-menu-closing { animation: none; }
+            #region-picker .region-picker-arrow, #region-picker-options button, #region-picker-search { transition: none; }
+        }
+
+        .account-history-hint { color: #96918a; font-size: 11px; line-height: 1.7; margin-bottom: 18px; }
+        .account-history { position: relative; }
+        .account-history-lines { position: absolute; top: 0; left: 0; width: var(--history-rail); pointer-events: none; overflow: visible; }
+        .account-history-events { list-style: none; margin: 0; padding: 0; }
+        .account-history-event { padding: 0 0 24px var(--history-rail); transition: opacity .15s; }
+        .account-history-event:last-child { padding-bottom: 5px; }
+        .account-history-row-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+        .account-history-row-heading > strong { font: 600 16px 'Rajdhani',sans-serif; color: var(--history-tone); }
+        .account-history-time { margin-inline-start: auto; color: #999; font-size: 11px; white-space: nowrap; }
+        #user-view .account-history-group { padding: 2px 5px; border: 1px solid transparent; border-radius: 5px; color: var(--group-color); font: 500 11px 'Inter',sans-serif; letter-spacing: normal; }
+        .account-history-event p { color: #aaa; font: 12px/1.7 'Inter',sans-serif; margin-top: 4px; overflow-wrap: anywhere; }
+        .account-history-event .group-history-clan { color: #888; font-size: 11px; }
+        .account-history-runtime { display: inline-block; margin-top: 7px; padding: 3px 7px; color: #c9b99c; background: #cfb88808; border: 1px solid #3d362b; border-radius: 5px; font-size: 10px; }
+        .history-running { --history-tone: #79c69f; }
+        .history-stopped { --history-tone: #dcc18b; }
+        .history-deleted { --history-tone: #df9696; }
+        .history-refunded { --history-tone: #91b6dd; }
+        .history-neutral { --history-tone: #aaa; }
+        .group-history-footnote { margin-top: 16px; color: #888; font-size: 11px; line-height: 1.7; }
+        @media(max-width:420px) { .account-history-time { flex-basis: 100%; margin-inline-start: 0; } }
+        #user-mobile-tabs { width: 100%; box-sizing: border-box; padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px); }
+        #user-mobile-tabs .mobile-tab-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: clamp(3px, 1vw, 8px); width: 100%; max-width: none; padding: 6px 8px; box-sizing: border-box; }
+        #user-mobile-tabs .mob-tab { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 5px; width: 100%; min-width: 0; min-height: 58px; padding: 6px 2px; border-radius: 10px; }
+        #user-mobile-tabs .mob-tab svg { width: 21px; height: 21px; flex-shrink: 0; }
+        #user-mobile-tabs .mob-tab > span { display: block; max-width: 100%; white-space: nowrap; font-family: 'Rajdhani','Inter',sans-serif; font-size: clamp(10px, 2.85vw, 12px); line-height: 1.2; font-weight: 600; letter-spacing: 0; }
+        #user-main-scroll { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+        @media (min-width: 1024px) { #user-main-scroll { padding-bottom: 24px; } }
+        #create-coupon-card .coupon-field-heading { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin: 18px 0 9px; }
+        #create-coupon-card .coupon-field-heading label { font-size: 13px; font-weight: 500; color: #ded2bf; }
+        #coupon-available { color: #a99d8b; font-size: 11px; }
+        #create-coupon-card .coupon-credit-stepper { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; gap: 8px; }
+        #create-coupon-card .coupon-credit-stepper button { min-height: 46px; border: 1px solid #454038; border-radius: 9px; color: #e6d4b5; background: #24211b; font-size: 23px; }
+        #create-coupon-card .coupon-credit-stepper button:hover { background: #332b20; }
+        #coupon-basic-credits { width: 100%; min-width: 0; min-height: 46px; border: 1px solid #484035; border-radius: 9px; background: #111; color: #f0e2cb; text-align: center; font: 600 22px 'Rajdhani',sans-serif; }
+        #coupon-basic-credits[aria-invalid="true"] { border-color: #b97474; }
+        #coupon-credit-help { margin: 8px 0 14px; font-size: 11px; color: #999; line-height: 1.6; }
+        .coupon-balance-preview { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 11px 0; border-top: 1px solid #322e28; font-size: 11px; color: #999; }
+        #coupon-remaining { color: #cabb9f; font-weight: 500; }
+        .coupon-transfer-note { color: #92908b; font-size: 11px; line-height: 1.6; margin-bottom: 14px; }
+        #create-coupon-btn { min-height: 44px; border-radius: 10px; color: #211c14; font-size: 16px; }
+        #create-coupon-btn:disabled { opacity: .4; cursor: not-allowed; }
+        #my-coupons-list .generated-coupon-identity { min-width: 0; }
+        #my-coupons-list .generated-coupon-identity > div:first-child { flex-shrink: 0; }
+        #my-coupons-list .generated-coupon-identity > div:last-child { min-width: 0; }
+        #my-coupons-list code { overflow-wrap: anywhere; }
+        #my-coupons-list .generated-coupon-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+        #my-coupons-list .generated-coupon-actions { display: flex; gap: 8px; }
+        #my-coupons-list .generated-coupon-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 9px 12px; border-radius: 9px; font: 600 15px 'Rajdhani',sans-serif; white-space: nowrap; }
+        #my-coupons-list .coupon-copy-button { background: #17312d; border: 1px solid #35645b; color: #9cdccd; }
+        #my-coupons-list .coupon-copy-button:hover { background: #204039; }
+        #my-coupons-list .coupon-cancel-button { background: #301c1e; border: 1px solid #65383d; color: #e4a2a7; }
+        #my-coupons-list .coupon-cancel-button:hover { background: #402428; }
+        @media(max-width:767px) {
+            #my-coupons-list .generated-coupon-row > div:first-child { flex-direction: column; align-items: stretch; gap: 12px; }
+            #my-coupons-list .generated-coupon-controls { justify-content: flex-start; }
+            #my-coupons-list .generated-coupon-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); width: 100%; }
+            #my-coupons-list .generated-coupon-actions button { min-width: 0; padding-inline: 6px; font-size: 14px; }
+        }
+        /* User header: blue Basic balance and comfortable, responsive controls. */
+        #user-topbar { height: auto; min-height: 64px; background: rgba(17,17,19,.94); }
+        #user-topbar .topnav-inner { min-height: 64px; padding-block: 8px; gap: 16px; }
+        #user-topbar .topnav-brand { flex-shrink: 0; }
+        #user-topbar .topnav-title { font-size: 20px; }
+        #user-topbar .topnav-actions { min-width: 0; gap: 6px; }
+        #user-topbar .topnav-btn { min-width: 44px; height: 44px; border-radius: 12px; }
+        #user-topbar .topnav-user { min-width: 44px; height: 42px; padding: 4px 10px; margin-left: 0; }
+        #user-topbar .topnav-credits { min-width: 0; min-height: 44px; height: auto; padding: 6px 8px 6px 12px; gap: 8px; border-radius: 12px; border-color: rgba(96,165,250,.32); background: rgba(59,130,246,.12); color: #bfdbfe; }
+        #user-topbar .topnav-credits:hover { background: rgba(59,130,246,.2); border-color: #60a5fa; }
+        #user-topbar .topnav-credits:focus-visible { outline-color: #60a5fa; }
+        #user-topbar .topnav-credits-dot { background: #60a5fa; flex-shrink: 0; }
+        #user-topbar .topnav-credits-val { color: #93c5fd; font-size: 20px; line-height: 1.1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; min-width: 0; }
+        #user-topbar .topnav-credits-label { display: flex; flex-direction: column; align-items: flex-start; flex-shrink: 0; gap: 1px; color: #bfdbfe; font: 600 12px/1.15 Inter,sans-serif; }
+        #user-topbar .topnav-credits-label small { color: #93b3da; font-size: 10px; font-weight: 400; }
+        #user-topbar .topnav-credits-plus { flex-shrink: 0; background: rgba(96,165,250,.18); color: #93c5fd; border-radius: 7px; width: 24px; height: 26px; }
+        @media(min-width:768px) {
+            #user-topbar .topnav-credits-label { flex-direction: row; align-items: baseline; gap: 4px; }
+            #user-topbar .topnav-credits-label small { font-size: 12px; }
+            #user-topbar .topnav-credits { padding-inline: 12px 8px; }
+        }
+        @media(max-width:767px) {
+            #user-topbar .topnav-inner { gap: 8px; padding-inline: 12px; }
+            #user-topbar .topnav-live, #user-topbar .topnav-divider, #user-topbar .topnav-btn-label { display: none; }
+            #user-topbar .topnav-user > span:not(.topnav-avatar), #user-topbar .topnav-user > svg { display: none; }
+            #user-topbar .topnav-actions { gap: 4px; }
+            #user-topbar .topnav-credits { gap: 6px; padding-inline: 8px; }
+            #user-topbar .topnav-credits-dot { display: none; }
+            #user-topbar .topnav-pop { max-height: calc(100dvh - 88px); overflow-y: auto; }
+        }
+        @media(max-width:479px) {
+            #user-topbar .topnav-inner { padding-inline: 10px; }
+            #user-topbar .topnav-title { display: none; }
+            #user-topbar .topnav-actions { flex: 1; justify-content: flex-end; }
+            #user-topbar .topnav-credits { margin-right: auto; gap: 5px; }
+            #user-topbar .topnav-credits-val { font-size: 18px; }
+            #user-topbar .topnav-credits-label { font-size: 11px; }
+            #user-topbar .topnav-credits-plus { width: 20px; }
+            #user-topbar .topnav-pop-wrap { flex-shrink: 0; }
+        }
+        /* Compact mobile navigation: one row, with fixed touch targets — exactly like ffglory.pro */
+        @media(max-width:600px) {
+            #user-topbar .topnav-inner { height: auto; min-height: 64px; flex-wrap: nowrap; gap: 10px; padding: 8px 12px; }
+            #user-topbar .topnav-brand { flex: 0 0 auto; gap: 8px; }
+            #user-topbar .topnav-title { display: inline; font-size: 18px; }
+            #user-topbar .topnav-actions { flex: 1 1 auto; width: auto; justify-content: flex-end; gap: 6px; }
+            #user-topbar .topnav-credits { flex: 0 1 auto; margin: 0 4px 0 0; min-height: 40px; padding: 6px 8px; gap: 5px; }
+            #user-topbar .topnav-credits-val { font-size: 17px; }
+            #user-topbar .topnav-credits-label { font-size: 10px; }
+            #user-topbar .topnav-credits-label small { font-size: 9px; }
+            #user-topbar .topnav-credits-plus { margin-left: 2px; width: 18px; height: 22px; }
+            #user-topbar .topnav-pop-wrap { position: static; flex: 0 0 44px; }
+            #user-topbar .topnav-btn, #user-topbar .topnav-user { width: 44px; min-width: 44px; height: 44px; padding: 0; justify-content: center; }
+            #user-topbar .topnav-pop { position: absolute; top: calc(100% + 8px); left: 12px; right: 12px; width: auto; max-width: none; max-height: calc(100vh - 88px); max-height: calc(100dvh - 88px); }
+        }
+        @media(max-width:479px) {
+            #user-topbar .topnav-title { display: none; }
+            #user-topbar .topnav-inner { gap: 8px; padding-inline: 10px; }
+            #user-topbar .topnav-credits { margin-right: auto; }
+        }
+        /* Lightweight rendering: solid surfaces, static decoration, targeted transitions. */
+        #user-topbar, #user-mobile-tabs, body > .fixed { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+        #user-topbar { background: #111113; }
+        #user-topbar .topnav-mark { background: #111113; box-shadow: none; border-radius: 6px; overflow: hidden; }
+        #user-topbar .topnav-mark img { display: block; width: 32px; height: 32px; object-fit: contain; }
+        #user-mobile-tabs { background: #101012; }
+        #user-view .ng-card, #user-view .ng-card:hover { box-shadow: 0 3px 10px #0002; transition: border-color .15s; }
+        #user-topbar .topnav-live-dot, #user-view .activity-led,
+        #user-view .clan-header.super-squad, #user-view .super-squad-badge,
+        #user-view .super-squad-badge span { animation: none !important; }
+        #user-view .transition-all { transition-property: color, background-color, border-color, opacity, transform; }
+        #buy-credits-content { transition: none; }
+        #launch-progress-bar { transition-property: width; }
+        @media (hover: none) {
+            #user-view .ng-card:hover { border-color: #2b2b2b; }
+        }
+
+        /* Nexus-inspired surfaces and motion, scoped to the user panel. */
+        :root { --panel-ease: cubic-bezier(.22,1,.36,1); }
+        body { background: #191919; }
+        #user-topbar { background: #191919; border-bottom-color: #303030; }
+        #user-view .ng-card, #user-view .ng-card:hover { background: #202020; border-color: #333; box-shadow: none; border-radius: 18px; }
+        #user-view .ng-section-icon { background: #272727 !important; border-color: #3b3b3b !important; box-shadow: none; border-radius: 12px; }
+        #user-view .user-sidebar-btn, #user-mobile-tabs .mob-tab { transition: background-color .2s, color .2s, transform .25s var(--panel-ease); }
+        #user-view .user-sidebar-btn-active, #user-mobile-tabs .mob-tab-active { background: #34312b; color: #f3e5cf; }
+        #user-view button:not(:disabled):active, #user-topbar button:not(:disabled):active { transform: scale(.98); }
+        #user-view .ng-input, #region-picker #region-picker-toggle { background: #191919; border-color: #3a3a3a; }
+        #user-view .group-card { background: #232323; border-radius: 12px; }
+        #user-view .ng-btn-primary, #launch-btn, #confirm-proceed-btn { box-shadow: none; }
+        #region-picker-menu, .confirm-launch-card { background: #222; border-color: #3d3b37; }
+        .confirm-launch-summary { background: #191919; border-color: #363636; }
+        #launch-progress { background: #1b1b1b; border-color: #393833; }
+        @keyframes panelRise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+        @keyframes panelPop { from { opacity: 0; transform: translateY(6px) scale(.97); } to { opacity: 1; transform: none; } }
+        @keyframes panelFlow { to { transform: translateX(20px); } }
+        @media(prefers-reduced-motion:no-preference) {
+            #user-section-dashboard, .user-section:not([style*="display: none"]), #user-section-launch > .ng-card { animation: panelRise .55s var(--panel-ease) backwards; }
+            #user-section-launch > .ng-card:nth-child(2) { animation-delay: .09s; }
+            #my-groups-list > div { animation: panelRise .5s var(--panel-ease) backwards; }
+            #my-groups-list > div:nth-child(2) { animation-delay: .06s; }
+            #my-groups-list > div:nth-child(3) { animation-delay: .12s; }
+            #confirm-modal:not(.hidden) .confirm-launch-card { animation: panelPop .4s var(--panel-ease) backwards; }
+            #user-topbar .topnav-pop:not(.hidden) { animation: panelPop .25s var(--panel-ease) backwards; }
+            #region-picker-options button { animation: panelPop .3s var(--panel-ease) backwards; }
+            #region-picker-options button:nth-child(2) { animation-delay: .025s; }
+            #region-picker-options button:nth-child(3) { animation-delay: .05s; }
+            #region-picker-options button:nth-child(4) { animation-delay: .075s; }
+        }
+        @media(hover:hover) and (pointer:fine) {
+            #user-view .ng-card { transition: border-color .25s; }
+            #user-view .ng-card:hover { border-color: #4b463e; }
+            #user-view .user-sidebar-btn:hover { transform: translateX(3px); }
+        }
+        .launch-route { display: grid; grid-template-columns: minmax(0,1fr) 36px minmax(0,1fr) 36px minmax(0,1fr); align-items: start; gap: 3px; margin: 0 0 20px; padding: 8px 0 20px; border-bottom: 1px solid #353730; }
+        .launch-route-node { display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; text-align: center; color: #8e968f; font: 500 11px/1.4 Inter,sans-serif; }
+        .launch-route-node b { position: relative; display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid #41463f; border-radius: 13px; background: #242722; color: #808b82; transition: background-color .3s, color .3s, border-color .3s; }
+        .launch-route-node svg { width: 20px; height: 20px; }
+        .launch-route-link { position: relative; height: 3px; margin-top: 20px; background: #3c423b; overflow: hidden; border-radius: 3px; }
+        .launch-route-link::after { content: ''; display: none; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(90deg,transparent,#d7be90 65%,#f4e1bd); }
+        #launch-progress[data-state="working"][data-phase="accounts"] .launch-route-link:nth-child(2)::after,
+        #launch-progress[data-state="working"][data-phase="finalizing"] .launch-route-link:nth-child(4)::after { display: block; animation: launchSignal 1.35s cubic-bezier(.4,0,.2,1) infinite; }
+        @keyframes launchSignal { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+        #launch-progress[data-phase="connecting"] .launch-route-node:nth-child(1),
+        #launch-progress[data-phase="accounts"] .launch-route-node:nth-child(3),
+        #launch-progress[data-phase="finalizing"] .launch-route-node:nth-child(5) { color: #f1dcb5; }
+        #launch-progress[data-phase="connecting"] .launch-route-node:nth-child(1) b,
+        #launch-progress[data-phase="accounts"] .launch-route-node:nth-child(3) b,
+        #launch-progress[data-phase="finalizing"] .launch-route-node:nth-child(5) b { background: #393124; color: #f1dcb5; border-color: #9e8660; }
+        #launch-progress[data-state="working"][data-phase="connecting"] .launch-route-node:nth-child(1) b::before,
+        #launch-progress[data-state="working"][data-phase="accounts"] .launch-route-node:nth-child(3) b::before,
+        #launch-progress[data-state="working"][data-phase="finalizing"] .launch-route-node:nth-child(5) b::before { content: ''; position: absolute; inset: -5px; border: 2px solid transparent; border-top-color: #cbb184; border-bottom-color: #cbb18433; border-radius: 50%; animation: launchSpinner 1.8s linear infinite; }
+        #launch-progress[data-phase="accounts"] .launch-route-node:nth-child(1) b,
+        #launch-progress[data-phase="finalizing"] .launch-route-node:not(:last-child) b,
+        #launch-progress[data-phase="ready"] .launch-route-node b { background: #253b31; color: #a9d7bc; border-color: #4f7a61; }
+        #launch-progress[data-phase="accounts"] .launch-route-node:nth-child(1) svg,
+        #launch-progress[data-phase="finalizing"] .launch-route-node:not(:last-child) svg,
+        #launch-progress[data-phase="ready"] .launch-route-node svg { display: none; }
+        #launch-progress[data-phase="accounts"] .launch-route-node:nth-child(1) b::after,
+        #launch-progress[data-phase="finalizing"] .launch-route-node:not(:last-child) b::after,
+        #launch-progress[data-phase="ready"] .launch-route-node b::after { content: ''; width: 9px; height: 15px; border: solid #a9d7bc; border-width: 0 2px 2px 0; transform: translateY(-2px) rotate(45deg); }
+        #launch-progress[data-phase="finalizing"] .launch-route-link:nth-child(2),
+        #launch-progress[data-phase="ready"] .launch-route-link { background: #75aa8a; }
+        #launch-progress[data-state="error"] .launch-route-node b { border-color: #88554e; }
+        @media(max-width:380px) { .launch-route { grid-template-columns: minmax(0,1fr) 20px minmax(0,1fr) 20px minmax(0,1fr); } .launch-route-node { font-size: 10px; } }
+        @media(prefers-reduced-motion:reduce) { #launch-progress .launch-route-link::after, #launch-progress .launch-route-node b::before { animation: none; } .launch-route-node b { transition: none; } }
+        html.panel-paused *, html.panel-paused *::before, html.panel-paused *::after { animation-play-state: paused !important; }
+
+        /* Clan topology: a root clan with connected group nodes. */
+        #my-groups-list .clan-topology { border: 1px solid #363636; border-radius: 18px; padding: 18px; background: #1b1c1b; margin-bottom: 20px; }
+        #my-groups-list .clan-map-caption { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; color: #9b9c97; font: 500 10px/1.5 Inter,sans-serif; letter-spacing: .12em; text-transform: uppercase; }
+        #my-groups-list .clan-map-caption span:last-child { color: #a7c8b4; letter-spacing: .03em; text-transform: none; }
+        #active-groups-panel .clan-topology .clan-header { margin: 0; background: #232622; border: 1px solid #4a5549; border-radius: 12px; box-shadow: none; }
+        #active-groups-panel .clan-topology .leaderboard-group-list { position: relative; display: grid; grid-template-columns: minmax(0,1fr); margin: 0 0 0 20px; padding: 24px 0 0 28px; gap: 16px; border-left: 1px dashed #597061; }
+        #active-groups-panel .clan-topology .group-card { position: relative; overflow: visible; background: #222322; border: 1px solid #3c423c; border-radius: 12px; margin: 0; }
+        #active-groups-panel .clan-topology .group-card::before { content: ''; position: absolute; width: 28px; height: 1px; top: 34px; left: -29px; right: auto; opacity: 1; background: #58625a; transition: none; }
+        #active-groups-panel .clan-topology .group-card::after { content: ''; position: absolute; width: 6px; height: 6px; border: 1px solid #839489; border-radius: 50%; left: -33px; top: 31px; background: #1b1c1b; }
+        #active-groups-panel .clan-topology .group-card[data-running="true"]::before { background: repeating-linear-gradient(90deg,#83b99a 0 4px,transparent 4px 8px); }
+        #active-groups-panel .clan-topology .group-card[data-running="true"]::after { background: #9cd3b2; border-color: #9cd3b2; }
+        #active-groups-panel .clan-topology .leaderboard-score { border-left-color: #3e4c42; }
+        #active-groups-panel .clan-topology .leaderboard-score [id^="glory-val-"] { color: #afd6bd; }
+        #active-groups-panel .clan-topology [id^="clan-total-glory-"] { color: #b6e2c4; }
+        #active-groups-panel .clan-topology .leaderboard-score > span:first-of-type { color: #a8b9ad; }
+        .clan-map-note { margin: 14px 0 0; color: #959e98; font: 11px/1.6 Inter,sans-serif; }
+        @keyframes clanContribution { from { transform: translateX(28px); opacity: .3; } 25%,75% { opacity: 1; } to { transform: translateX(0); opacity: .3; } }
+        @media(prefers-reduced-motion:no-preference) {
+            #active-groups-panel .clan-topology.map-visible .group-card[data-running="true"]::after { animation: clanContribution 1.8s linear infinite; }
+            #active-groups-panel .clan-topology.map-visible .group-card:nth-child(2n)::after { animation-delay: -.9s; }
+        }
+        @media(max-width:600px) {
+            #my-groups-list .clan-topology { padding: 12px; border-radius: 14px; }
+            #active-groups-panel .clan-topology .leaderboard-group-list { margin-left: 7px; padding-left: 14px; }
+            #active-groups-panel .clan-topology .group-card { padding: 14px 10px; }
+            #active-groups-panel .clan-topology .group-card::before { left: -15px; width: 14px; }
+            #active-groups-panel .clan-topology .group-card::after { left: -18px; }
+            @keyframes clanContribution { from { transform: translateX(14px); opacity: .3; } 25%,75% { opacity: 1; } to { transform: translateX(0); opacity: .3; } }
+            #active-groups-panel .clan-topology .group-classic-actions { grid-template-columns: minmax(0,1fr); }
+        }
+
+        /* Readable group nodes: identity, score, facts, runtime, actions. */
+        #active-groups-panel .clan-topology .group-card { padding: 20px; }
+        #active-groups-panel .clan-topology .group-classic-heading { grid-template-columns: minmax(0,1fr) auto; gap: 16px; align-items: start; }
+        #active-groups-panel .clan-topology .group-shield { display: none; }
+        #active-groups-panel .group-classic-heading h3 { font: 600 15px/1.5 Inter,sans-serif; letter-spacing: 0; overflow-wrap: anywhere; white-space: normal; }
+        #active-groups-panel .group-id-badge { padding: 0; border: 0; background: none; color: #a4aaa5; font: 500 11px/1.5 Inter,sans-serif; }
+        #active-groups-panel .group-identity-line { flex-direction: column; align-items: flex-start; gap: 7px; }
+        #active-groups-panel .group-identity-line > div:last-child { align-items: flex-start; }
+        #active-groups-panel .group-facts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1px; margin-top: 16px; border: 1px solid #353b36; background: #353b36; border-radius: 10px; overflow: hidden; }
+        #active-groups-panel .group-fact { min-width: 0; padding: 12px; background: #1d201e; }
+        #active-groups-panel .group-fact-label { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: #98a59c; font: 500 11px/1.4 Inter,sans-serif; }
+        #active-groups-panel .group-fact-label svg { width: 14px; height: 14px; flex-shrink: 0; }
+        #active-groups-panel .group-fact .group-stat-value { display: block; color: #e2e7e3; font: 500 13px/1.5 Inter,sans-serif; overflow-wrap: anywhere; }
+        #active-groups-panel .clan-topology .leaderboard-score { position: relative; padding: 9px 12px; min-width: 78px; border: 1px solid #3e5445; background: #27372c; border-radius: 10px; }
+        #active-groups-panel .group-classic-stats { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; border-top: 0; }
+        #active-groups-panel .group-classic-stats > div { display: flex; flex-wrap: wrap; gap: 5px; }
+        #active-groups-panel .group-classic-stats > div > span:last-of-type { flex-basis: 100%; font: 500 13px/1.5 Inter,sans-serif; }
+        #active-groups-panel .group-classic-stats svg { width: 14px; height: 14px; }
+        #active-groups-panel .clan-topology .group-classic-actions { grid-template-columns: repeat(2,minmax(0,1fr)); }
+        #active-groups-panel .group-classic-actions > button { font: 500 12px/1.4 Inter,sans-serif; gap: 7px; min-height: 44px; padding: 10px 8px; }
+        #active-groups-panel .group-classic-actions svg { flex: 0 0 15px; width: 15px; height: 15px; }
+        #active-groups-panel .group-card .animate-ping, #active-groups-panel .group-card .activity-led { display: none; }
+        #active-groups-panel .clan-topology .group-card[data-running="true"]::before { background: #536e5b; }
+        #active-groups-panel .clan-topology.map-visible .group-card[data-running="true"]::after { animation-duration: 2.6s; animation-timing-function: cubic-bezier(.4,0,.2,1); }
+        #active-groups-panel .clan-topology .clan-header > .flex:last-child { gap: 16px; }
+        #active-groups-panel .clan-header [id^="clan-captain-"], #active-groups-panel .clan-header [id^="clan-members-"] { font: 500 13px/1.5 Inter,sans-serif; }
+        @media(max-width:600px) {
+            #active-groups-panel { padding: 14px; }
+            #my-groups-list .clan-topology { padding: 10px; }
+            #active-groups-panel .clan-topology .group-card { padding: 14px 12px; }
+            #active-groups-panel .clan-topology .group-classic-heading { gap: 8px; }
+            #active-groups-panel .group-classic-heading h3 { font-size: 12px; }
+            #active-groups-panel .group-facts { grid-template-columns: repeat(2,minmax(0,1fr)); }
+            #active-groups-panel .group-fact:first-child { grid-column: 1/-1; }
+            #active-groups-panel .group-fact { padding: 10px; }
+            #active-groups-panel .clan-topology .leaderboard-score { min-width: 62px; padding: 8px; }
+            #active-groups-panel .clan-header .leaderboard-identity { gap: 9px; width: 100%; }
+            #active-groups-panel .clan-header .leaderboard-identity > div:first-child { width: 42px; height: 42px; }
+            #active-groups-panel .clan-header h3 { font-size: 21px; }
+            #active-groups-panel .clan-topology .clan-header > .flex:last-child { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+            #active-groups-panel .clan-topology .clan-header > .flex:last-child > div { align-items: flex-start; min-width: 0; }
+            #active-groups-panel .clan-topology .clan-header > .flex:last-child > div:nth-child(3) { grid-column: 1/-1; border-top: 1px solid #384539; padding-top: 10px; }
+        }
+
+        /* Reference topology motion: SVG dash flow + packets on cubic paths. */
+        #my-groups-list .clan-topology { position: relative; }
+        #active-groups-panel .clan-topology .leaderboard-group-list { border-left: 0; }
+        #active-groups-panel .clan-topology .group-card::before,
+        #active-groups-panel .clan-topology .group-card::after { content: none; animation: none; }
+        .clan-connection-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+        .clan-connection-line { fill: none; stroke: #454a46; stroke-width: 1.75; }
+        .clan-connection-line.running { stroke: #8abd9d; stroke-dasharray: 5 5; animation: clanReferenceFlow 1.2s linear infinite; animation-play-state: paused; }
+        .map-visible .clan-connection-line.running { animation-play-state: running; }
+        @keyframes clanReferenceFlow { to { stroke-dashoffset: -20; } }
+        @media(prefers-reduced-motion:reduce) {
+            .clan-connection-line.running { animation: none; }
+            .clan-connection-packet { display: none; }
+        }
+
+        .clan-compact-map { position: relative; display: grid; grid-template-columns: minmax(90px,1fr) 56px minmax(110px,1.2fr); align-items: center; padding: 18px 0; margin: 12px 0; }
+        .map-clan-node, .map-group-node { position: relative; z-index: 1; min-width: 0; padding: 12px; background: #242724; border: 1px solid #435448; border-radius: 12px; }
+        .map-group-column { grid-column: 3; display: grid; gap: 12px; }
+        .map-group-node { background: #222; border-color: #3a403b; }
+        .clan-compact-map small { display: block; color: #a0ada4; font: 500 10px/1.4 Inter,sans-serif; margin-bottom: 5px; }
+        .clan-compact-map strong { display: block; font: 600 13px/1.5 Inter,sans-serif; color: #e2e9e4; overflow-wrap: anywhere; }
+        .map-node-glory { display: block; color: #a7d2b6; font: 600 20px/1.4 'Rajdhani',sans-serif; margin-top: 6px; }
+        .map-group-node[data-running="true"] { border-color: #577c63; }
+        .map-activity { border-top: 1px solid #373c38; margin: 0 0 18px; padding: 12px 0 0; color: #a8b7ad; font: 11px/1.6 Inter,sans-serif; }
+        #active-groups-panel .clan-topology .leaderboard-group-list { margin-left: 0; padding: 0; }
+        .map-controls-heading { margin: 20px 0 12px; color: #9ea69f; font: 600 11px Inter,sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+        .account-history-event { padding-bottom: 22px; }
+        .account-history-row-heading { gap: 7px 10px; }
+        .account-history-row-heading > strong { font: 600 13px/1.5 Inter,sans-serif; }
+        #user-view .account-history-group { background: #232623; border-color: #363c36; padding: 4px 7px; overflow-wrap: anywhere; }
+        .account-history-event .group-history-clan { margin-top: 9px; color: #b2b9b3; }
+        .account-history-runtime { font-size: 11px; padding: 6px 9px; border-radius: 7px; }
+        @media(max-width:600px) {
+            .clan-compact-map { grid-template-columns: minmax(0,1fr) 32px minmax(0,1fr); }
+            .map-clan-node, .map-group-node { padding: 10px 8px; border-radius: 9px; }
+            .clan-compact-map strong { font-size: 11px; }
+            .account-history-time { flex-basis: 100%; margin-inline-start: 0; }
+            .account-history-row-heading { align-items: flex-start; }
+        }
+
+        .group-skeleton-shell { padding: 18px; border: 1px solid #363d37; border-radius: 14px; background: #202320; }
+        .group-skeleton-row { display: flex; gap: 12px; align-items: center; margin-bottom: 18px; }
+        .group-skeleton-block, #active-groups-panel .data-skeleton { color: transparent !important; background: #343b35 !important; border-radius: 6px; min-width: 36px; pointer-events: none; user-select: none; }
+        #active-groups-panel .data-skeleton * { visibility: hidden; }
+        .group-skeleton-block { display: block; height: 14px; }
+        .group-skeleton-stack { display: grid; gap: 10px; flex: 1; }
+        .group-skeleton-card { padding: 18px; border: 1px solid #333c35; border-radius: 10px; margin-top: 14px; }
+        @keyframes skeletonBreath { 50% { opacity: .45; } }
+        @media(prefers-reduced-motion:no-preference) {
+            .group-skeleton-block, #active-groups-panel .data-skeleton { animation: skeletonBreath 1.6s ease-in-out infinite; }
+        }
+
+        #active-groups-panel button.map-group-node { width: 100%; text-align: left; cursor: pointer; transition: border-color .2s, background-color .2s; }
+        #active-groups-panel button.map-group-node:hover { border-color: #9acaaa; background: #29352d; }
+        #active-groups-panel button.map-group-node:focus-visible { outline: 2px solid #a9d7bc; outline-offset: 3px; }
+        .map-group-open { display: block; margin-top: 6px; color: #a6bcad; font: 500 10px/1.4 Inter,sans-serif; }
+        #active-groups-panel .group-card { scroll-margin-top: 84px; scroll-margin-bottom: 90px; }
+        #active-groups-panel .clan-topology .group-card.group-map-focused { border-color: #a9d7bc; outline: 2px solid #84b596; outline-offset: 3px; }
+
+        /* Separate the clan overview from the surrounding account panel. */
+        #my-groups-list .clan-topology { background: #171e27; border-color: #344353; }
+        #my-groups-list .clan-map-caption { color: #a7b8cb; }
+        #my-groups-list .clan-compact-map { background: #111923; border: 1px solid #2d4053; border-radius: 14px; padding: 18px 12px; }
+        #active-groups-panel .clan-topology .clan-header { background: #202c36; border-color: #435665; }
+        #my-groups-list .map-clan-node { background: #263b47; border-color: #577985; }
+        #my-groups-list .map-group-node { background: #1e2a34; border-color: #405765; }
+        #my-groups-list .map-group-node[data-running="true"] { border-color: #608779; }
+        #my-groups-list .map-activity { border-color: #344353; color: #adbdca; }
+        #my-groups-list .map-controls-heading { color: #b0bdcb; }
+        @media(max-width:600px) { #my-groups-list .clan-compact-map { padding: 14px 8px; } }
+
+        /* Central palette: shared surfaces, readable text, semantic accents. */
+        :root {
+            --ui-page: #0c0c0d; --ui-inset: #101011; --ui-card: #18181a;
+            --ui-raised: #222225; --ui-border: #353538; --ui-hover: #505055;
+            --ui-text: #ededee; --ui-muted: #b1b1b8; --ui-subtle: #92929b;
+            --ui-gold: #dec9a6; --ui-gold-bg: #2d2820; --ui-gold-border: #635641;
+            --ui-blue: #a2c8f6; --ui-blue-bg: #1b293b; --ui-blue-border: #3d5778;
+            --ui-green: #add7bc; --ui-green-bg: #202d25; --ui-green-border: #476550;
+            --ui-red: #efb0b5; --ui-red-bg: #322124; --ui-red-border: #74434a;
+            --ng-bg-deep: var(--ui-page); --ng-bg-surface: var(--ui-inset);
+            --ng-bg-elevated: var(--ui-raised); --ng-bg-card: var(--ui-card);
+            --ng-text: var(--ui-text); --ng-text-muted: var(--ui-muted); --ng-text-subtle: var(--ui-subtle);
+            --ng-border: var(--ui-border); --ng-border-hover: var(--ui-hover);
+            --ng-cream: var(--ui-gold); --ng-ivory: #e8d7bb; --ng-warm: #d0bb97;
+        }
+        body { background: var(--ui-page); color: var(--ui-text); }
+        #user-topbar, #user-mobile-tabs { background: var(--ui-inset); border-color: var(--ui-border); }
+        #user-view .ng-card, #user-view .ng-card:hover { background: var(--ui-card); border-color: var(--ui-border); box-shadow: none; }
+        #user-view .ng-section-icon { background: var(--ui-raised) !important; border-color: var(--ui-border) !important; }
+        #user-view .user-sidebar-btn-active, #user-mobile-tabs .mob-tab-active { background: var(--ui-raised); color: var(--ui-gold); }
+        #user-view .ng-input, #region-picker #region-picker-toggle, #region-picker-search, .region-search-field,
+        #create-coupon-card input, #buy-credits-content .checkout-recipient { background: var(--ui-inset); border-color: var(--ui-border); color: var(--ui-text); }
+        #region-picker-menu, .confirm-launch-card, #user-topbar .topnav-pop { background: var(--ui-card); border-color: var(--ui-border); }
+        .confirm-launch-summary, #launch-progress { background: var(--ui-inset); border-color: var(--ui-border); }
+        #region-picker-options button { color: var(--ui-text); }
+        #region-picker-options button[aria-pressed="true"] { background: var(--ui-gold-bg); border-color: var(--ui-gold-border); color: var(--ui-gold); }
+        #region-picker-search::placeholder, #user-view input::placeholder { color: var(--ui-subtle); }
+        #my-groups-list .clan-topology, #my-groups-list .clan-compact-map { background: var(--ui-inset); border-color: var(--ui-border); }
+        #active-groups-panel .clan-topology .clan-header, #my-groups-list .map-clan-node { background: var(--ui-raised); border-color: var(--ui-hover); }
+        #my-groups-list .map-group-node, #active-groups-panel .clan-topology .group-card { background: var(--ui-card); border-color: var(--ui-border); }
+        #my-groups-list .map-group-node[data-running="true"], #active-groups-panel .clan-topology .leaderboard-score { background: var(--ui-green-bg); border-color: var(--ui-green-border); }
+        #active-groups-panel button.map-group-node:hover { background: #2b3830; border-color: var(--ui-green); }
+        #active-groups-panel .group-facts { background: var(--ui-border); border-color: var(--ui-border); }
+        #active-groups-panel .group-fact { background: var(--ui-inset); }
+        #my-groups-list .map-activity, #my-groups-list .clan-map-caption, #my-groups-list .map-controls-heading,
+        #active-groups-panel .group-fact-label, .clan-map-note, .account-history-hint { color: var(--ui-muted); border-color: var(--ui-border); }
+        #active-groups-panel .group-classic-actions .ng-btn-warning { background: var(--ui-gold-bg); color: var(--ui-gold); border-color: var(--ui-gold-border); }
+        #active-groups-panel .group-classic-actions .ng-btn-purple,
+        #active-groups-panel .group-classic-actions .ng-btn-outline { background: var(--ui-raised); color: var(--ui-text); border-color: var(--ui-border); }
+        #active-groups-panel .group-classic-actions .ng-btn-danger,
+        #my-coupons-list .coupon-cancel-button { background: var(--ui-red-bg); color: var(--ui-red); border-color: var(--ui-red-border); }
+        #my-coupons-list .coupon-copy-button { background: var(--ui-raised); color: var(--ui-text); border-color: var(--ui-border); }
+        #user-view .ng-badge-success { background: var(--ui-green-bg); color: var(--ui-green); border-color: var(--ui-green-border); }
+        #user-view .ng-badge-danger { background: var(--ui-red-bg); color: var(--ui-red); border-color: var(--ui-red-border); }
+        #user-topbar .topnav-credits { background: var(--ui-blue-bg); border-color: var(--ui-blue-border); }
+        #user-topbar .topnav-credits-val, #user-topbar .topnav-credits-label { color: var(--ui-blue); }
+        #user-topbar .topnav-credits-label small { color: var(--ui-blue); }
+        #buy-credits-content .checkout-total { background: var(--ui-raised); border-color: var(--ui-border); }
+        #buy-credits-content .checkout-step-number { background: var(--ui-raised); border-color: var(--ui-border); }
+        #user-view .account-history-group { background: var(--ui-raised); border-color: var(--ui-border); }
+        .account-history-runtime { background: var(--ui-gold-bg); color: var(--ui-gold); border-color: var(--ui-gold-border); }
+        .group-skeleton-shell, .group-skeleton-card { background: var(--ui-card); border-color: var(--ui-border); }
+        .group-skeleton-block, #active-groups-panel .data-skeleton { background: #343438 !important; }
+        #user-view .text-gray-500, #user-view .text-gray-600 { color: var(--ui-subtle); }
+
+        /* Active Groups keeps its original warm charcoal palette. */
+        #user-view #active-groups-panel { background: #171717; border-color: #2b2b2b; }
+        #active-groups-panel #my-groups-count { background: #292723; color: #e8d5b7; }
+        #active-groups-panel .clan-topology { background: #1b1c1b; border-color: #363636; }
+        #active-groups-panel .clan-topology .clan-header { background: #232622; border-color: #4a5549; }
+        #active-groups-panel .clan-compact-map { background: #191b19; border-color: #363e37; }
+        #active-groups-panel .map-clan-node { background: #242724; border-color: #435448; }
+        #active-groups-panel .map-group-node { background: #222; border-color: #3a403b; }
+        #active-groups-panel .map-group-node[data-running="true"] { background: #222; border-color: #577c63; }
+        #active-groups-panel button.map-group-node:hover { background: #29352d; border-color: #9acaaa; }
+        #active-groups-panel .clan-topology .group-card { background: #222322; border-color: #3c423c; }
+        #active-groups-panel .group-facts { background: #353b36; border-color: #353b36; }
+        #active-groups-panel .group-fact { background: #1d201e; }
+        #active-groups-panel .clan-topology .leaderboard-score { background: #27372c; border-color: #3e5445; }
+        #active-groups-panel .group-classic-actions .ng-btn-warning { background: #c79b44; color: #211b10; border-color: #d1a853; }
+        #active-groups-panel .group-classic-actions .ng-btn-purple { background: #e4d3b8; color: #292117; border-color: #e4d3b8; }
+        #active-groups-panel .group-classic-actions .ng-btn-danger { background: #492428; color: #f0b2b4; border-color: #784047; }
+        #active-groups-panel .group-classic-actions .ng-btn-outline { background: #181818; color: #e8d5b7; border-color: #40382c; }
+        #active-groups-panel .map-activity, #active-groups-panel .clan-map-note { color: #a8b7ad; border-color: #373c38; }
+
+        /* Flat group controls: one surface per group, no nested boxes. */
+        #active-groups-panel .group-controls-panel { margin-top: 22px; padding: 0; background: transparent; border: 0; border-radius: 0; }
+        #active-groups-panel .group-controls-panel .map-controls-heading { margin: 0 0 12px; padding: 0; color: #acb7ae; border: 0; font: 500 12px/1.5 Inter,sans-serif; letter-spacing: 0; text-transform: none; }
+        #active-groups-panel .group-controls-panel .leaderboard-group-list { gap: 12px; align-items: start; }
+        @media(min-width:900px) {
+            #active-groups-panel .group-controls-panel .leaderboard-group-list { grid-template-columns: repeat(auto-fill,minmax(320px,1fr)); gap: 16px; }
+        }
+        #active-groups-panel .group-controls-panel .group-card { padding: 18px; background: #222824; border: 0; border-radius: 12px; box-shadow: none; }
+        #active-groups-panel .group-controls-panel .group-classic-heading { gap: 12px; }
+        #active-groups-panel .group-controls-panel .leaderboard-score { padding: 0; border: 0; background: transparent; min-width: 62px; }
+        #active-groups-panel .group-controls-panel .group-facts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; margin-top: 18px; border: 0; border-radius: 0; background: transparent; overflow: visible; }
+        /* Clan ID is already shown in the clan header. */
+        #active-groups-panel .group-controls-panel .group-fact:first-child { display: none; }
+        #active-groups-panel .group-controls-panel .group-fact { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0; background: transparent; }
+        #active-groups-panel .group-controls-panel .group-fact-label,
+        #active-groups-panel .group-controls-panel .group-metric-label { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: #a3a3a3; font: 500 12px/1.5 Inter,sans-serif; letter-spacing: 0; text-transform: none; }
+        #active-groups-panel .group-controls-panel .group-fact-label svg,
+        #active-groups-panel .group-controls-panel .group-metric-label svg { display: block; flex: 0 0 14px; width: 14px; height: 14px; color: inherit; }
+        #active-groups-panel .group-controls-panel .group-classic-stats { grid-template-columns: repeat(2,minmax(0,1fr)); margin: 16px 0; padding: 0; border: 0; gap: 16px; }
+        #active-groups-panel .group-controls-panel .group-classic-stats > div:not(.w-px) { flex-direction: column; align-items: flex-start; gap: 6px; }
+        #active-groups-panel .group-controls-panel .group-classic-stats > div > span:last-of-type { flex-basis: auto; color: #e2e7e3; overflow-wrap: anywhere; }
+        #active-groups-panel .group-controls-panel .group-runtime-progress { margin: 16px 0; }
+        /* Nexus .btn dimensions, pill shape and motion, scoped to group actions. */
+        #active-groups-panel .group-controls-panel .group-classic-actions { margin-top: 18px; padding-top: 0; border: 0; gap: 8px; }
+        #active-groups-panel .group-controls-panel .group-classic-actions > button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 16px; border: 1px solid #414641; border-radius: 999px; background: transparent; color: #f5f5f5; font: 500 14px/1.4 Inter,sans-serif; letter-spacing: 0; text-transform: none; box-shadow: none; transition: background .15s, border-color .15s; }
+        #active-groups-panel .group-controls-panel .group-classic-actions > .ng-btn-purple { background: #f5f5f5; color: #1a1a1a; border-color: #f5f5f5; }
+        #active-groups-panel .group-controls-panel .group-classic-actions > .ng-btn-danger { color: #f28b82; }
+        #active-groups-panel .group-controls-panel .group-classic-actions > button:hover:not(:disabled) { background: #303630; border-color: #626962; filter: none; }
+        #active-groups-panel .group-controls-panel .group-classic-actions > .ng-btn-purple:hover:not(:disabled) { background: #dedede; border-color: #dedede; }
+        #active-groups-panel .group-controls-panel .group-classic-actions > .ng-btn-danger:hover:not(:disabled) { background: #381719; border-color: #73423e; }
+        #active-groups-panel .group-controls-panel .group-classic-actions svg { width: 16px; height: 16px; flex: 0 0 16px; transition: transform .25s cubic-bezier(.16,1,.3,1); }
+        #active-groups-panel .group-controls-panel .group-classic-actions > button:focus-visible { outline: 2px solid #74c59a; outline-offset: 3px; }
+        #active-groups-panel .group-controls-panel .group-classic-actions > button:active:not(:disabled) { transform: scale(.98); }
+        @media(hover:hover) {
+            #active-groups-panel .group-controls-panel .group-classic-actions > button:hover:not(:disabled) svg { transform: translateX(3px); }
+        }
+        @media(max-width:600px) {
+            #active-groups-panel .group-controls-panel .group-card { padding: 16px 12px; }
+            #active-groups-panel .group-controls-panel .group-classic-actions > button { padding: 10px 8px; font-size: 13px; }
+        }
+        @media(prefers-reduced-motion:reduce) {
+            #active-groups-panel .group-controls-panel .group-classic-actions > button,
+            #active-groups-panel .group-controls-panel .group-classic-actions > button svg { transition: none; transform: none; }
+        }
+        /* Classic chronological history rows with connected group lines. */
+        #history-list .account-history-event { padding-bottom: 22px; }
+        #history-list .account-history-surface { padding: 0; border: 0; border-radius: 0; background: transparent; }
+        #history-list .account-history-row-heading { align-items: center; gap: 8px 12px; }
+        #history-list .account-history-row-heading > strong { display: inline-flex; align-items: center; gap: 7px; font: 500 13px/1.5 Inter,sans-serif; }
+        #history-list .history-icon { width: 16px; height: 16px; flex: 0 0 16px; vertical-align: middle; }
+        #user-view #history-list .account-history-group { padding: 3px 7px; border: 1px solid #363c36; border-radius: 6px; background: #232623; font: 500 11px/1.5 Inter,sans-serif; }
+        #history-list .account-history-time { color: #a3a3a3; font: 400 11px/1.5 Inter,sans-serif; }
+        #history-list .account-history-event p { margin: 10px 0 0; color: #b8c0ba; font: 400 12px/1.7 Inter,sans-serif; }
+        #history-list .group-history-clan { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+        #history-list .group-history-clan svg { color: #a3a3a3; }
+        #history-list .account-history-runtime { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding: 5px 9px; border: 0; border-radius: 999px; background: #2d3730; color: #b9d4c2; font: 500 11px/1.5 Inter,sans-serif; }
+        #history-list .history-running { --history-tone: #74c59a; }
+        #history-list .history-stopped { --history-tone: #e2a26b; }
+        #history-list .history-deleted { --history-tone: #f28b82; }
+        #history-list .history-refunded { --history-tone: #7aa9d8; }
+        #history-stats > div > span { background: transparent; border: 0; padding: 3px 0; font: 500 12px/1.5 Inter,sans-serif; }
+        #history-stats > div { gap: 8px 18px; }
+        #refresh-history-btn { min-height: 44px; padding: 10px 16px; border: 1px solid #414641; border-radius: 999px; background: transparent; color: #ededee; font: 500 13px/1.4 Inter,sans-serif; transition: background .15s,border-color .15s; }
+        #refresh-history-btn:hover:not(:disabled) { background: #262626; border-color: #626962; }
+        #refresh-history-btn:focus-visible { outline: 2px solid #74c59a; outline-offset: 3px; }
+        @media(max-width:600px) {
+            #history-list .account-history-surface { padding: 0; }
+            #history-list .account-history-group { flex-basis: 100%; }
+            #history-list .account-history-time { flex-basis: 100%; margin-inline-start: 0; }
+        }
+        #active-groups-panel .clan-ranking { margin-top: 10px; max-width: 340px; color: #a3a3a3; font: 400 11px/1.6 Inter,sans-serif; text-transform: none; letter-spacing: 0; overflow-wrap: anywhere; }
+        #active-groups-panel .clan-ranking-title { display: flex; align-items: center; gap: 6px; color: #c6d3c9; font-weight: 500; }
+        #active-groups-panel .clan-ranking-title svg { width: 15px; height: 15px; flex-shrink: 0; }
+        #active-groups-panel .clan-ranking[data-state="ranked"] .clan-ranking-title { color: #74c59a; }
+        #active-groups-panel .clan-ranking-detail { margin-top: 3px; }
+        .map-group-node > small { display: flex; align-items: center; gap: 6px; }
+        .map-activity-dot { display: inline-block; width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: #74c59a; }
+        @keyframes mapActivityBlink { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+        @media(prefers-reduced-motion:no-preference) {
+            .map-activity-dot { animation: mapActivityBlink 1.6s ease-in-out infinite; animation-play-state: paused; }
+            .map-visible .map-activity-dot { animation-play-state: running; }
+        }
+        #active-groups-panel .clan-weekly-summary { margin-top: 10px; color: #b8c6bc; font: 400 11px/1.7 Inter,sans-serif; text-transform: none; letter-spacing: 0; }
+        #active-groups-panel .clan-ranking-gap { margin-top: 7px; color: #add7bc; font-weight: 500; }
+        #active-groups-panel .clan-ranking-progress { display: block; width: 100%; height: 4px; margin-top: 8px; border: 0; border-radius: 999px; overflow: hidden; appearance: none; background: #354039; color: #74c59a; }
+        #active-groups-panel .clan-ranking-progress::-webkit-progress-bar { background: #354039; border-radius: 999px; }
+        #active-groups-panel .clan-ranking-progress::-webkit-progress-value { background: #74c59a; border-radius: 999px; }
+        #active-groups-panel .clan-ranking-progress::-moz-progress-bar { background: #74c59a; border-radius: 999px; }
+        #active-groups-panel .map-clan-node .map-weekly-label { display: block; margin-top: 14px; color: #a8b9ad; font: 500 11px/1.4 Inter,sans-serif; }
+        #active-groups-panel .map-clan-node .map-weekly-value { display: block; margin-top: 3px; color: #b8e6c9; font: 700 clamp(25px,3vw,34px)/1.15 Rajdhani,sans-serif; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+        #active-groups-panel .clan-total-stat { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
+        #active-groups-panel .clan-total-label { color: #a3a3a3; font: 500 11px/1.5 Inter,sans-serif; }
+        #active-groups-panel .clan-total-value { color: #e0e5e1; font: 500 22px/1.2 Outfit,sans-serif; font-variant-numeric: tabular-nums; }
+        @media(max-width:600px) {
+            #active-groups-panel .map-clan-node .map-weekly-value { font-size: 25px; }
+            #active-groups-panel .clan-total-value { font-size: 20px; }
+        }
+        #active-groups-panel .clan-ranking[hidden] { display: none; }
+        .clan-rank-timeline { position: relative; margin-top: 10px; padding-left: 10px; border-left: 1px solid #45604d; }
+        .clan-rank-current, .clan-rank-neighbor { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 0; }
+        .clan-rank-current { color: #c7ead3; flex-wrap: wrap; }
+        .clan-rank-position { min-width: 32px; font: 600 20px/1.2 Rajdhani,sans-serif; font-variant-numeric: tabular-nums; }
+        .clan-rank-current > span { overflow-wrap: anywhere; flex: 1; font: 500 12px/1.5 Inter,sans-serif; }
+        .clan-rank-current > small { color: #9ebaa8; font: 400 10px/1.5 Inter,sans-serif; }
+        .clan-rank-neighbor { opacity: .4; }
+        .clan-rank-placeholder { display: block; width: 90px; max-width: 50%; height: 7px; border-radius: 8px; background: #87958b; filter: blur(3px); }
+    </style>
+    <!-- Security Shield: Anti-Inspect & DevTools Protection -->
+    <script>
+    (function() {
+        document.addEventListener('contextmenu', function(e) { e.preventDefault(); return false; }, false);
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'F12' || e.keyCode === 123) { e.preventDefault(); return false; }
+            if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c' || e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) { e.preventDefault(); return false; }
+            if (e.metaKey && e.altKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c')) { e.preventDefault(); return false; }
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'U' || e.key === 'u' || e.keyCode === 85)) { e.preventDefault(); return false; }
+        }, false);
+        try {
+            const noop = function() {};
+            console.log = noop; console.info = noop; console.warn = noop; console.error = noop; console.debug = noop; console.table = noop; console.trace = noop;
+            console.clear();
+            setInterval(function() { try { console.clear(); } catch(e){} }, 2000);
+        } catch(e) {}
+    })();
+    </script>
+</head>
+<body class="bg-[#0c0c0d] text-[#ededee] min-h-screen flex flex-col antialiased">
+    <!-- Notification Toasts -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- ========================================== -->
+    <!-- SECURE ADMIN RESELLER CONSOLE              -->
+    <!-- ========================================== -->
+    <div id="admin-screen" class="flex-grow flex flex-col">
+        <nav class="topnav sticky top-0 z-40 border-b border-[var(--ui-gold-border)] bg-[#121214]">
+            <div class="topnav-inner">
+                <div class="flex items-center gap-3">
+                    <a href="/admin" class="topnav-brand">
+                        <span class="topnav-mark">
+                            <img src="https://www.ffglory.pro/assets/ffglory-logo-96.png" onerror="this.src='/assets/ffglory-logo-96.png?v=2'" width="32" height="32" alt="Logo">
+                        </span>
+                        <span class="topnav-title">FFGlory <span class="text-amber-400 font-bold">RESELLER ADMIN</span></span>
+                    </a>
+                    <span class="ng-badge-primary text-[10px]">OWNER CONTROL</span>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <button type="button" onclick="window.location.href='/dashboard'" class="ng-btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5 text-gray-300">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                        <span>View Customer Dashboard</span>
+                    </button>
+                    <button type="button" onclick="handleLogout()" class="ng-btn-outline text-xs px-3 py-1.5 flex items-center gap-1 text-red-400 border-red-500/30 hover:bg-red-500/10">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                        <span>Logout</span>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <div class="flex-grow p-4 md:p-6 max-w-7xl w-full mx-auto space-y-6">
+            <!-- Metric Stats Grid -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="ng-card p-4 border border-[var(--ui-border)]">
+                    <span class="text-xs text-[var(--ui-muted)] uppercase tracking-wider block">Total Registered Customers</span>
+                    <strong id="admin-stat-users" class="font-['Rajdhani'] font-bold text-3xl text-white mt-1 block">0</strong>
+                    <span class="text-[10px] text-emerald-400 mt-1 block">SQLite Database Active</span>
+                </div>
+                <div class="ng-card p-4 border border-[var(--ui-border)]">
+                    <span class="text-xs text-[var(--ui-muted)] uppercase tracking-wider block">Customer Active Groups</span>
+                    <strong id="admin-stat-groups" class="font-['Rajdhani'] font-bold text-3xl text-emerald-400 mt-1 block">0</strong>
+                    <span class="text-[10px] text-gray-400 mt-1 block">Bots farming glory</span>
+                </div>
+                <div class="ng-card p-4 border border-[var(--ui-border)]">
+                    <span class="text-xs text-[var(--ui-muted)] uppercase tracking-wider block">Completed Auto Top-Ups</span>
+                    <strong id="admin-stat-pending" class="font-['Rajdhani'] font-bold text-3xl text-emerald-400 mt-1 block">0</strong>
+                    <span class="text-[10px] text-emerald-400/80 mt-1 block">100% Auto-Credited via FamGateway</span>
+                </div>
+                <div class="ng-card p-4 border border-[var(--ui-border)]">
+                    <span class="text-xs text-[var(--ui-muted)] uppercase tracking-wider block">Your Upstream API Pool</span>
+                    <strong id="admin-stat-upstream" class="font-['Rajdhani'] font-bold text-3xl text-blue-400 mt-1 block">0</strong>
+                    <span class="text-[10px] text-gray-400 mt-1 block">Credits on ffglory.pro</span>
+                </div>
+            </div>
+
+            <!-- Upstream Zero Credits Warning Banner -->
+            <div id="admin-upstream-alert" class="hidden p-4 rounded-xl bg-amber-500/15 border border-amber-500/35 text-amber-200 text-xs flex items-center justify-between gap-3 flex-wrap">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">⚠️</span>
+                    <div>
+                        <strong class="font-bold text-white text-sm block">Upstream Master Key Has 0 Credits!</strong>
+                        <span class="text-amber-300/80">Your API key on ffglory.pro has 0 balance. Free Fire bots cannot be started until you top up your key on ffglory.pro. Customer credits will remain safe and not be deducted.</span>
+                    </div>
+                </div>
+                <a href="https://ffglory.pro" target="_blank" rel="noopener" class="px-4 py-2 rounded-lg bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 transition-all shadow-md">
+                    Refill on ffglory.pro ↗
+                </a>
+            </div>
+
+            <!-- Admin Tabs Navigation -->
+            <div class="flex gap-2 border-b border-[var(--ui-border)] pb-2 overflow-x-auto">
+                <button type="button" onclick="switchAdminTab('orders')" id="admin-tab-orders" class="px-4 py-2 text-sm font-semibold rounded-lg bg-[var(--ui-raised)] text-[var(--ui-gold)] border border-[var(--ui-gold-border)]">
+                    Auto Top-Ups History (<span id="admin-pending-count">0</span>)
+                </button>
+                <button type="button" onclick="switchAdminTab('users')" id="admin-tab-users" class="px-4 py-2 text-sm font-semibold rounded-lg text-gray-400 hover:text-white">
+                    Customers &amp; Wallets
+                </button>
+                <button type="button" onclick="switchAdminTab('activity')" id="admin-tab-activity" class="px-4 py-2 text-sm font-semibold rounded-lg text-gray-400 hover:text-white flex items-center gap-1.5">
+                    <span>📜 Activity History (Logs)</span>
+                </button>
+                <button type="button" onclick="switchAdminTab('settings')" id="admin-tab-settings" class="px-4 py-2 text-sm font-semibold rounded-lg text-gray-400 hover:text-white">
+                    Payment &amp; Profit Settings
+                </button>
+                <button type="button" onclick="switchAdminTab('broadcast')" id="admin-tab-broadcast" class="px-4 py-2 text-sm font-semibold rounded-lg text-gray-400 hover:text-white">
+                    Broadcast Announcement
+                </button>
+            </div>
+
+            <!-- Admin Section: Automated Top-Ups Ledger -->
+            <div id="admin-sec-orders" class="space-y-4">
+                <div class="ng-card p-6 border border-[var(--ui-border)]">
+                    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+                        <div>
+                            <h3 class="font-['Rajdhani'] font-bold text-xl text-emerald-400">Automated Customer Top-Ups &amp; Payments</h3>
+                            <p class="text-xs text-gray-400">Real-time ledger of customer payments processed through FamGateway UPI QR. Credits are delivered automatically — no manual approval required.</p>
+                        </div>
+                        <span class="px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            100% Automated • Instant Credit
+                        </span>
+                    </div>
+                    <div id="admin-orders-list" class="space-y-3">
+                        <p class="text-xs text-gray-500">Loading payment transactions...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Section: Complete User Management Console -->
+            <div id="admin-sec-users" class="hidden space-y-4">
+                <div class="ng-card p-6 border border-[var(--ui-border)]">
+                    <div class="flex justify-between items-center mb-5 flex-wrap gap-3">
+                        <div>
+                            <h3 class="font-['Rajdhani'] font-bold text-2xl text-white">Customer &amp; User Management</h3>
+                            <p class="text-xs text-gray-400">Search users, manage wallets, ban/unban accounts, reset passwords, or change roles.</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="text" id="admin-user-search" oninput="adminFilterUsers()" placeholder="Search by username..." class="ng-input text-xs py-2 px-3 w-48">
+                            <select id="admin-user-status-filter" onchange="adminFilterUsers()" class="ng-input text-xs py-2 px-3">
+                                <option value="all">All Status</option>
+                                <option value="active">Active Only</option>
+                                <option value="banned">Banned Only</option>
+                                <option value="admin">Admins Only</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Direct Credit Tool -->
+                    <div class="p-4 rounded-xl bg-black/40 border border-gray-800 mb-6">
+                        <h4 class="text-xs font-semibold text-amber-300 mb-3 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>💳 Quick Credit Adjustment (Add, Deduct, or Set)</span>
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+                            <div>
+                                <label class="text-[11px] text-gray-400 mb-1 block">Customer</label>
+                                <select id="admin-credit-select" onchange="document.getElementById('admin-credit-username').value = this.value" class="ng-input text-xs">
+                                    <option value="">-- Choose User --</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[11px] text-gray-400 mb-1 block">Or Username</label>
+                                <input type="text" id="admin-credit-username" placeholder="Username" class="ng-input text-xs">
+                            </div>
+                            <div>
+                                <label class="text-[11px] text-gray-400 mb-1 block">Action Mode</label>
+                                <select id="admin-credit-mode" class="ng-input text-xs">
+                                    <option value="add">+ Add to Balance</option>
+                                    <option value="deduct">- Deduct from Balance</option>
+                                    <option value="set">= Set Exact Balance</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[11px] text-gray-400 mb-1 block">Credits</label>
+                                <input type="number" id="admin-credit-amount" placeholder="e.g. 50" value="50" class="ng-input text-xs">
+                            </div>
+                            <button type="button" onclick="adminSubmitCreditAdjustment()" class="ng-btn-primary py-2.5 text-xs font-semibold flex items-center justify-center gap-1.5">
+                                <span>Apply Credits</span>
+                            </button>
+                        </div>
+                        <div class="flex gap-2 mt-3 flex-wrap items-center">
+                            <span class="text-[11px] text-gray-400">Quick Presets:</span>
+                            <button type="button" onclick="document.getElementById('admin-credit-amount').value = 10" class="px-2.5 py-1 text-[11px] rounded bg-gray-800 text-gray-300 hover:bg-gray-700 font-medium">+10</button>
+                            <button type="button" onclick="document.getElementById('admin-credit-amount').value = 50" class="px-2.5 py-1 text-[11px] rounded bg-gray-800 text-gray-300 hover:bg-gray-700 font-medium">+50</button>
+                            <button type="button" onclick="document.getElementById('admin-credit-amount').value = 100" class="px-2.5 py-1 text-[11px] rounded bg-gray-800 text-gray-300 hover:bg-gray-700 font-medium">+100</button>
+                            <button type="button" onclick="document.getElementById('admin-credit-amount').value = 500" class="px-2.5 py-1 text-[11px] rounded bg-gray-800 text-gray-300 hover:bg-gray-700 font-medium">+500</button>
+                        </div>
+                    </div>
+
+                    <!-- Enhanced Users Table -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-black/40 border-b border-[var(--ui-border)] text-gray-400">
+                                <tr>
+                                    <th class="p-3">ID</th>
+                                    <th class="p-3">Customer</th>
+                                    <th class="p-3">Status</th>
+                                    <th class="p-3">Credits Balance</th>
+                                    <th class="p-3">Activity</th>
+                                    <th class="p-3">Registered On</th>
+                                    <th class="p-3 text-right">User Management Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-users-table" class="divide-y divide-gray-800">
+                                <tr><td colspan="7" class="p-4 text-center text-gray-500">Loading customers...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Section: Activity History & Logs -->
+            <div id="admin-sec-activity" class="hidden space-y-4">
+                <div class="ng-card p-6 border border-[var(--ui-border)]">
+                    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+                        <div>
+                            <h3 class="font-['Rajdhani'] font-bold text-xl text-amber-300 flex items-center gap-2">
+                                <span>📜 System Activity & Audit Logs</span>
+                            </h3>
+                            <p class="text-xs text-gray-400">Live timeline of who bought credits, created/redeemed gift coupons, and launched clan bots.</p>
+                        </div>
+                        <button type="button" onclick="loadAdminActivityLogs()" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-gray-300 border border-white/10 flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            <span>Refresh Logs</span>
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead>
+                                <tr class="text-[var(--ui-muted)] border-b border-[var(--ui-border)] text-[11px] uppercase tracking-wider">
+                                    <th class="py-3 px-3">Time</th>
+                                    <th class="py-3 px-3">User</th>
+                                    <th class="py-3 px-3">Action Type</th>
+                                    <th class="py-3 px-3">Description</th>
+                                    <th class="py-3 px-3">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-activity-logs-body" class="divide-y divide-[var(--ui-border)]/40">
+                                <tr><td colspan="5" class="py-8 text-center text-gray-500">Loading activity timeline...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Section: FamGateway Payment Settings -->
+            <div id="admin-sec-settings" class="hidden space-y-4">
+                <div class="ng-card p-6 border border-[var(--ui-border)] max-w-2xl">
+                    <div class="flex items-center justify-between pb-4 border-b border-gray-800 mb-5 flex-wrap gap-2">
+                        <div>
+                            <h3 class="font-['Rajdhani'] font-bold text-2xl text-white flex items-center gap-2">
+                                <span class="px-2.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-xs font-bold border border-emerald-500/40">FamGateway</span>
+                                <span>FamGateway Payment Settings</span>
+                            </h3>
+                            <p class="text-xs text-gray-400 mt-1">Configure your FamGateway URL &amp; API Key. Click <strong>Test</strong> to verify connection and <strong>Set</strong> to save.</p>
+                        </div>
+                    </div>
+
+                    <form onsubmit="adminSaveFamGateway(event)" class="space-y-4">
+                        <div>
+                            <label class="ng-form-label text-xs">FamGateway Base / API URL <span class="text-amber-400">*</span></label>
+                            <input type="url" id="setting-famgateway-url" value="https://famgateway.in" placeholder="e.g. https://famgateway.in" class="ng-input font-mono text-xs" required>
+                            <p class="text-[10px] text-gray-500 mt-1">Base domain for FamGateway API (default: <code>https://famgateway.in</code>).</p>
+                        </div>
+
+                        <div>
+                            <label class="ng-form-label text-xs">FamGateway API Key <span class="text-amber-400">*</span></label>
+                            <input type="text" id="setting-famgateway-key" placeholder="Enter FamGateway API Key (e.g. fg_live_...)" class="ng-input font-mono text-xs" required>
+                            <p class="text-[10px] text-gray-500 mt-1">Your merchant secret key provided on your FamGateway dashboard.</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label class="ng-form-label text-xs">Credit Price in ₹ (INR)</label>
+                                <input type="number" id="setting-famgateway-price" value="120" placeholder="120" class="ng-input text-xs" required>
+                                <p class="text-[10px] text-gray-500 mt-1">Price per 1 Basic Credit in Indian Rupees.</p>
+                            </div>
+                            <div>
+                                <label class="ng-form-label text-xs">FamPay UPI ID / VPA</label>
+                                <input type="text" id="setting-famgateway-upi" value="merchant@fam" placeholder="merchant@fam" class="ng-input text-xs">
+                                <p class="text-[10px] text-gray-500 mt-1">Default UPI display ID for fallback direct transfers.</p>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons: TEST and SET (Save) -->
+                        <div class="pt-2 flex items-center gap-3 flex-wrap">
+                            <button type="button" id="btn-test-famgateway" onclick="adminTestFamGateway()" class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-2 transition-all">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                <span>🧪 Test Gateway API</span>
+                            </button>
+                            <button type="submit" id="btn-save-famgateway" class="ng-btn-primary px-6 py-2.5 text-xs font-bold flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                <span>💾 Set &amp; Save FamGateway</span>
+                            </button>
+                        </div>
+
+                        <!-- Real-time Test Output Box -->
+                        <div id="admin-famgateway-test-result" class="hidden p-3 rounded-xl bg-black border border-gray-800 font-mono text-[11px] text-gray-300 space-y-1"></div>
+                    </form>
+                </div>
+
+                <!-- Dedicated Card: Master Upstream Bot API Key (ffglory.pro) -->
+                <div class="ng-card p-6 border border-[var(--ui-border)] max-w-2xl mt-5">
+                    <div class="flex items-center justify-between pb-4 border-b border-gray-800 mb-5 flex-wrap gap-2">
+                        <div>
+                            <h3 class="font-['Rajdhani'] font-bold text-2xl text-white flex items-center gap-2">
+                                <span class="px-2.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/40">ffglory.pro</span>
+                                <span>Master Upstream Bot API Key</span>
+                            </h3>
+                            <p class="text-xs text-gray-400 mt-1">This key connects to <strong>ffglory.pro</strong> to launch automated glory bots for clans. Test status or set below.</p>
+                        </div>
+                    </div>
+
+                    <form onsubmit="adminSaveMasterKey(event)" class="space-y-4">
+                        <div>
+                            <label class="ng-form-label text-xs">Master Upstream Bot API Key <span class="text-amber-400">*</span></label>
+                            <div class="relative">
+                                <input type="text" id="setting-master-key" placeholder="Enter ffglory.pro Master API Key (e.g. ak_... or fam_...)" class="ng-input font-mono text-xs" required>
+                            </div>
+                            <p class="text-[10px] text-gray-500 mt-1">Used by the backend to trigger clan bots. Click <strong>Test</strong> to probe ffglory.pro and <strong>Set</strong> to save.</p>
+                        </div>
+
+                        <div class="pt-2 flex items-center gap-3 flex-wrap">
+                            <button type="button" id="btn-test-master-key" onclick="adminTestMasterKey()" class="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 transition-all">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                <span>🧪 Test Master Key</span>
+                            </button>
+                            <button type="submit" id="btn-save-master-key" class="ng-btn-primary px-6 py-2.5 text-xs font-bold flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                <span>💾 Set &amp; Save Master Key</span>
+                            </button>
+                        </div>
+
+                        <!-- Real-time Test Output Box -->
+                        <div id="admin-master-key-test-result" class="hidden p-3 rounded-xl bg-black border border-gray-800 font-mono text-[11px] text-gray-300 space-y-1"></div>
+                    </form>
+                </div>
+
+                <!-- Contact Support Settings (WhatsApp & Telegram) -->
+                <div class="ng-card p-6 border border-[var(--ui-border)] max-w-2xl mt-5">
+                    <div class="flex items-center justify-between pb-4 border-b border-gray-800 mb-5">
+                        <div>
+                            <h3 class="font-['Rajdhani'] font-bold text-2xl text-white flex items-center gap-2">
+                                <span class="px-2.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-xs font-bold border border-blue-500/40">Support Links</span>
+                                <span>WhatsApp &amp; Telegram Contact Settings</span>
+                            </h3>
+                            <p class="text-xs text-gray-400 mt-1">Manage the WhatsApp number and Telegram username/channel links displayed on the login page and client panels.</p>
+                        </div>
+                    </div>
+
+                    <form onsubmit="adminSaveContactSettings(event)" class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="ng-form-label text-xs">WhatsApp Number / Link <span class="text-emerald-400">*</span></label>
+                                <div class="relative">
+                                    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400">
+                                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.945C.16 5.335 5.495 0 12.05 0a11.815 11.815 0 018.413 3.487A11.821 11.821 0 0123.943 11.9c-.003 6.556-5.338 11.892-11.893 11.892h-.005a11.882 11.882 0 01-5.683-1.448L0 24.001l.057-.001z"/></svg>
+                                    </span>
+                                    <input type="text" id="setting-contact-whatsapp" placeholder="e.g. 6282326562316 or 919876543210" class="ng-input pl-10 text-xs font-mono" required>
+                                </div>
+                                <p class="text-[10px] text-gray-500 mt-1">Phone number with country code (e.g. 6282326562316) or wa.me URL.</p>
+                            </div>
+
+                            <div>
+                                <label class="ng-form-label text-xs">Telegram Username / Link <span class="text-sky-400">*</span></label>
+                                <div class="relative">
+                                    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400">
+                                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.161c-.18.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+                                    </span>
+                                    <input type="text" id="setting-contact-telegram" placeholder="e.g. ff_level_pro or channel name" class="ng-input pl-10 text-xs font-mono" required>
+                                </div>
+                                <p class="text-[10px] text-gray-500 mt-1">Username without @ or full t.me link.</p>
+                            </div>
+                        </div>
+
+                        <div class="pt-2 flex items-center gap-3">
+                            <button type="submit" id="btn-save-contact" class="ng-btn-primary px-6 py-2.5 text-xs font-bold flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                <span>💾 Save WhatsApp &amp; Telegram</span>
+                            </button>
+                            <span id="admin-contact-save-status" class="text-xs text-emerald-400 font-medium hidden">Saved successfully!</span>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Admin Section: Broadcast Alert -->
+            <div id="admin-sec-broadcast" class="hidden space-y-4">
+                <div class="ng-card p-6 border border-[var(--ui-border)] max-w-xl">
+                    <h3 class="font-['Rajdhani'] font-bold text-xl text-amber-300 mb-2">Publish Global Announcement</h3>
+                    <p class="text-xs text-gray-400 mb-4">Send a popup alert across all customer screens.</p>
+                    <form onsubmit="adminSubmitBroadcast(event)" class="space-y-4">
+                        <div>
+                            <label class="ng-form-label text-xs">Alert Title</label>
+                            <input type="text" id="admin-broadcast-title" value="Glory Boost Active" class="ng-input text-sm" required>
+                        </div>
+                        <div>
+                            <label class="ng-form-label text-xs">Alert Message</label>
+                            <textarea id="admin-broadcast-message" rows="3" class="ng-input text-sm" required>All regions online. Start your guild glory bots now.</textarea>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                                <input type="checkbox" id="admin-broadcast-active" checked class="rounded bg-black/40 border-gray-700 text-amber-500">
+                                <span>Active (Show popup to customers)</span>
+                            </label>
+                        </div>
+                        <button type="submit" class="ng-btn-primary px-6 py-2.5 text-sm">Update Announcement</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function showToast(message, type = 'info') {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.innerHTML = `<span>${type === 'success' ? '✓' : (type === 'error' ? '✕' : 'ℹ')}</span><span>${message}</span>`;
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(12px)';
+            toast.style.transition = 'all 0.3s ease';
+            setTimeout(() => toast.remove(), 300);
+        }, 3200);
+    }
+
+    function handleLogout() {
+        try { localStorage.clear(); } catch(e) {}
+        try { sessionStorage.clear(); } catch(e) {}
+        window.location.href = '/logout';
+    }
+
+    const API = {
+        me: '/api/auth/me',
+        adminOverview: '/api/admin/overview',
+        adminUsers: '/api/admin/users',
+        adminAdjustCredits: '/api/admin/adjust-credits',
+        adminPendingOrders: '/api/admin/pending-orders',
+        adminApproveOrder: '/api/admin/approve-order',
+        adminRejectOrder: '/api/admin/reject-order',
+        adminSaveSettings: '/api/admin/save-settings',
+        adminBroadcast: '/api/admin/broadcast-alert'
+    };
+
+    let allAdminUsers = [];
+
+    // STRICTLY PROTECTED ADMIN LOGIC
+    // ============================================
+    async function initAdminDashboard() {
+        try {
+            await loadAdminOverview();
+            await loadAdminOrders();
+            await loadAdminUsers();
+            await loadAdminSettings();
+        } catch (e) {
+            console.error("Admin dashboard init error:", e);
+        }
+    }
+
+    function switchAdminTab(tabName) {
+        const tabs = ['orders', 'users', 'activity', 'settings', 'broadcast'];
+        tabs.forEach(t => {
+            const sec = document.getElementById(`admin-sec-${t}`);
+            const btn = document.getElementById(`admin-tab-${t}`);
+            if (sec) sec.classList.toggle('hidden', t !== tabName);
+            if (btn) {
+                if (t === tabName) {
+                    btn.className = 'px-4 py-2 text-sm font-semibold rounded-lg bg-[var(--ui-raised)] text-[var(--ui-gold)] border border-[var(--ui-gold-border)]';
+                } else {
+                    btn.className = 'px-4 py-2 text-sm font-semibold rounded-lg text-gray-400 hover:text-white';
+                }
+            }
+        });
+        if (tabName === 'settings') {
+            loadAdminSettings();
+        } else if (tabName === 'users') {
+            loadAdminUsers();
+                } else if (tabName === 'orders') {
+            loadAdminOrders();
+        } else if (tabName === 'activity') {
+            loadAdminActivityLogs();
+        }
+    }
+
+    async function loadAdminOverview() {
+        try {
+            const res = await fetch(API.adminOverview);
+            if (!res.ok) {
+                showToast('Admin access denied.', 'error');
+                switchAppView('dashboard');
+                return;
+            }
+            const data = await res.json();
+            if (document.getElementById('admin-stat-users')) document.getElementById('admin-stat-users').textContent = data.total_users || 0;
+            if (document.getElementById('admin-stat-groups')) document.getElementById('admin-stat-groups').textContent = data.running_groups || 0;
+            if (document.getElementById('admin-stat-pending')) document.getElementById('admin-stat-pending').textContent = data.pending_orders || 0;
+            if (document.getElementById('admin-pending-count')) document.getElementById('admin-pending-count').textContent = data.pending_orders || 0;
+            if (document.getElementById('admin-stat-upstream')) document.getElementById('admin-stat-upstream').textContent = data.upstream_credits_pool || 0;
+
+            const upAlert = document.getElementById('admin-upstream-alert');
+            if (upAlert) {
+                if ((data.upstream_credits_pool || 0) <= 0) {
+                    upAlert.classList.remove('hidden');
+                } else {
+                    upAlert.classList.add('hidden');
+                }
+            }
+        } catch (e) {}
+    }
+
+    async function loadAdminOrders() {
+        const container = document.getElementById('admin-orders-list');
+        if (!container) return;
+        try {
+            const res = await fetch(API.adminPendingOrders);
+            const orders = await res.json();
+            if (document.getElementById('admin-pending-count')) {
+                document.getElementById('admin-pending-count').textContent = orders.length;
+            }
+
+            if (!orders || orders.length === 0) {
+                container.innerHTML = `<p class="text-xs text-gray-500 p-4 rounded-xl bg-black/20 border border-gray-800">No payment transactions found.</p>`;
+                return;
+            }
+
+            container.innerHTML = orders.map(o => {
+                const isApproved = o.status === 'approved';
+                const isPending = o.status === 'pending';
+                const badgeHtml = isApproved 
+                    ? `<span class="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">✓ Auto-Credited</span>`
+                    : isPending
+                    ? `<span class="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">⏳ Awaiting Gateway</span>`
+                    : `<span class="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-red-500/20 text-red-400 border border-red-500/30">${escapeHtml(o.status)}</span>`;
+
+                return `
+                <div class="flex items-center justify-between p-4 rounded-xl bg-black/40 border border-gray-800 text-xs flex-wrap gap-3">
+                    <div class="space-y-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <strong class="text-white text-sm font-semibold">${escapeHtml(o.username)}</strong>
+                            <span class="text-gray-500 text-[11px]">•</span>
+                            <span class="text-amber-400 font-bold text-xs">+${o.amount} Basic Credits</span>
+                            <span class="text-emerald-400 font-bold text-xs font-mono">(₹${parseFloat(o.usd || 0).toFixed(2)} INR)</span>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap text-gray-400 text-[11px]">
+                            <span class="font-mono bg-white/5 px-2 py-0.5 rounded text-gray-300 truncate max-w-xs md:max-w-md">${escapeHtml(o.order_id || o.id)}</span>
+                            <span class="text-gray-500 text-[10px]">${escapeHtml(o.created_at)}</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        ${badgeHtml}
+                    </div>
+                </div>
+                `;
+            }).join('');
+        } catch (e) {
+            container.innerHTML = `<p class="text-xs text-red-400 p-4 rounded-xl bg-black/20 border border-red-900/30">Failed to load transactions: ${escapeHtml(e.message)}</p>`;
+        }
+    }
+
+    async function adminApproveOrder(txId) {
+        try {
+            const res = await fetch(API.adminApproveOrder, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transaction_id: txId })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message || 'Order approved and credited!', 'success');
+                loadAdminOrders();
+                loadAdminOverview();
+                loadAdminUsers();
+            }
+        } catch(e){}
+    }
+
+    async function adminRejectOrder(txId) {
+        try {
+            const res = await fetch(API.adminRejectOrder, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transaction_id: txId })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message || 'Order rejected.', 'info');
+                loadAdminOrders();
+                loadAdminOverview();
+            }
+        } catch(e){}
+    }
+
+    async function loadAdminUsers() {
+        const tbody = document.getElementById('admin-users-table');
+        const select = document.getElementById('admin-credit-select');
+        if (!tbody) return;
+        try {
+            const res = await fetch(API.adminUsers);
+            allAdminUsers = await res.json();
+
+            if (select) {
+                select.innerHTML = '<option value="">-- Choose User --</option>' +
+                    allAdminUsers.map(u => `<option value="${u.username}">${u.username} (${u.basic_credits} credits)</option>`).join('');
+            }
+
+            renderAdminUsersTable(allAdminUsers);
+        } catch (e) {}
+    }
+
+    function renderAdminUsersTable(users) {
+        const tbody = document.getElementById('admin-users-table');
+        if (!tbody) return;
+
+        if (!users || users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-gray-500">No users match your search filter.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = users.map(u => `
+            <tr class="hover:bg-white/[0.03] transition-colors">
+                <td class="p-3 font-mono text-gray-500">#${u.id}</td>
+                <td class="p-3 font-semibold text-white">
+                    <div class="flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full bg-amber-500/20 text-amber-300 font-bold flex items-center justify-center text-[11px] uppercase">${u.username[0]}</span>
+                        <span>${u.username}</span>
+                        ${u.role === 'admin' ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/25 text-amber-300 font-bold border border-amber-500/40">ADMIN</span>' : ''}
+                    </div>
+                </td>
+                <td class="p-3">
+                    ${u.is_banned ? 
+                        '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">BANNED</span>' : 
+                        '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">ACTIVE</span>'
+                    }
+                </td>
+                <td class="p-3 font-['Rajdhani'] font-bold text-base text-amber-300">
+                    ${u.basic_credits} <span class="text-[11px] text-gray-400 font-normal">credits</span>
+                </td>
+                <td class="p-3 text-gray-300">
+                    <span class="block">${u.groups_count || 0} bots</span>
+                    <span class="text-[10px] text-gray-500">₹${(u.total_spent_usd || 0).toFixed(2)} spent</span>
+                </td>
+                <td class="p-3 text-gray-500 text-[11px]">${u.created_at || 'Recent'}</td>
+                <td class="p-3 text-right">
+                    <div class="inline-flex gap-1.5 justify-end flex-wrap">
+                        <button onclick="adminQuickAddCredits('${u.username}', 10)" title="+10 Credits" class="px-2 py-1 text-[10px] rounded bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/30 font-semibold border border-emerald-500/30">+10</button>
+                        <button onclick="adminQuickAddCredits('${u.username}', 50)" title="+50 Credits" class="px-2 py-1 text-[10px] rounded bg-blue-500/15 text-blue-300 hover:bg-blue-500/30 font-semibold border border-blue-500/30">+50</button>
+                        <button onclick="adminResetUserPasswordPrompt(${u.id}, '${u.username}')" title="Reset Password" class="px-2 py-1 text-[10px] rounded bg-gray-800 text-gray-300 hover:bg-gray-700 font-semibold border border-gray-700">🔑 PW</button>
+                        <button onclick="adminToggleBanUser(${u.id}, '${u.username}', ${u.is_banned})" title="${u.is_banned ? 'Unban' : 'Ban'}" class="px-2 py-1 text-[10px] rounded font-semibold ${u.is_banned ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}">
+                            ${u.is_banned ? 'Unban' : 'Ban'}
+                        </button>
+                        ${u.username !== 'admin' && u.id !== 1 ? `
+                            <button onclick="adminToggleUserRole(${u.id}, '${u.username}', '${u.role}')" title="Change Role" class="px-2 py-1 text-[10px] rounded bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 font-semibold border border-purple-500/30">Role</button>
+                            <button onclick="adminDeleteUserPrompt(${u.id}, '${u.username}')" title="Delete User" class="px-2 py-1 text-[10px] rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 font-semibold border border-red-500/30">🗑️</button>
+                        ` : ''}
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function adminFilterUsers() {
+        const query = (document.getElementById('admin-user-search')?.value || '').toLowerCase().trim();
+        const statusFilter = document.getElementById('admin-user-status-filter')?.value || 'all';
+
+        let filtered = allAdminUsers;
+        if (query) {
+            filtered = filtered.filter(u => u.username.toLowerCase().includes(query) || String(u.id) === query);
+        }
+        if (statusFilter === 'active') {
+            filtered = filtered.filter(u => !u.is_banned);
+        } else if (statusFilter === 'banned') {
+            filtered = filtered.filter(u => u.is_banned);
+        } else if (statusFilter === 'admin') {
+            filtered = filtered.filter(u => u.role === 'admin');
+        }
+
+        renderAdminUsersTable(filtered);
+    }
+
+    async function adminQuickAddCredits(username, amount) {
+        try {
+            const res = await fetch(API.adminAdjustCredits, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, amount, mode: 'add' })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message, 'success');
+                loadAdminUsers();
+                loadAdminOverview();
+            } else {
+                showToast(data.error || 'Failed', 'error');
+            }
+        } catch(e){}
+    }
+
+    async function adminSubmitCreditAdjustment() {
+        const username = document.getElementById('admin-credit-username').value.trim();
+        const amount = parseInt(document.getElementById('admin-credit-amount').value) || 0;
+        const mode = document.getElementById('admin-credit-mode')?.value || 'add';
+
+        if (!username) {
+            showToast('Please choose or enter a username', 'error');
+            return;
+        }
+
+        try {
+            const res = await fetch(API.adminAdjustCredits, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, amount, mode })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message, 'success');
+                loadAdminUsers();
+                loadAdminOverview();
+            } else {
+                showToast(data.error || 'Failed', 'error');
+            }
+        } catch(e){
+            showToast('Network error', 'error');
+        }
+    }
+
+    async function adminToggleBanUser(userId, username, currentBanned) {
+        const actionTxt = currentBanned ? 'unban' : 'ban and suspend';
+        if (!confirm(`Are you sure you want to ${actionTxt} '${username}'?`)) return;
+
+        try {
+            const res = await fetch('/api/admin/user/toggle-ban', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message, 'success');
+                loadAdminUsers();
+            } else {
+                showToast(data.error || 'Failed to toggle ban', 'error');
+            }
+        } catch(e) {
+            showToast('Network error', 'error');
+        }
+    }
+
+    async function adminResetUserPasswordPrompt(userId, username) {
+        const newPw = prompt(`Enter new password for '${username}':`);
+        if (!newPw) return;
+        if (newPw.length < 4) {
+            showToast('Password must be at least 4 characters', 'error');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/admin/user/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId, password: newPw })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(`Password updated for '${username}'!`, 'success');
+            } else {
+                showToast(data.error || 'Failed to update password', 'error');
+            }
+        } catch(e) {
+            showToast('Network error', 'error');
+        }
+    }
+
+    async function adminToggleUserRole(userId, username, currentRole) {
+        const nextRole = currentRole === 'admin' ? 'user' : 'admin';
+        if (!confirm(`Change '${username}' role to ${nextRole.toUpperCase()}?`)) return;
+
+        try {
+            const res = await fetch('/api/admin/user/toggle-role', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId, role: nextRole })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message, 'success');
+                loadAdminUsers();
+            } else {
+                showToast(data.error || 'Failed to change role', 'error');
+            }
+        } catch(e) {
+            showToast('Network error', 'error');
+        }
+    }
+
+    async function adminDeleteUserPrompt(userId, username) {
+        if (!confirm(`⚠️ DANGER: Permanently delete '${username}' and all their records? This cannot be undone.`)) return;
+
+        try {
+            const res = await fetch('/api/admin/user/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message, 'success');
+                loadAdminUsers();
+                loadAdminOverview();
+            } else {
+                showToast(data.error || 'Failed to delete user', 'error');
+            }
+        } catch(e) {
+            showToast('Network error', 'error');
+        }
+    }
+
+    
+    async function adminClearTopupHistory() {
+        if (!confirm('Are you sure you want to CLEAR all Top-Up History records? This will delete old transaction logs from the panel.')) return;
+        try {
+            const res = await fetch('/api/admin/transactions/clear', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message || 'Top-up history cleared!', 'success');
+                loadAdminOrders();
+                loadAdminOverview();
+            } else {
+                showToast(data.error || 'Failed to clear history', 'error');
+            }
+        } catch(e) {
+            showToast('Network error clearing history', 'error');
+        }
+    }
+
+    async function adminSaveCreditPricing(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        const inr = document.getElementById('setting-custom-price-inr').value.trim();
+        const usd = document.getElementById('setting-custom-price-usd').value.trim();
+        const btn = document.getElementById('btn-save-credit-pricing');
+        if (btn) btn.disabled = true;
+
+        try {
+            const res = await fetch('/api/admin/pricing/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ price_inr: inr, price_usd: usd })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message || 'Credit price updated!', 'success');
+                const fgPrice = document.getElementById('setting-famgateway-price');
+                if (fgPrice) fgPrice.value = inr;
+            } else {
+                showToast(data.error || 'Failed to update pricing', 'error');
+            }
+        } catch(err) {
+            showToast('Network error saving price', 'error');
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    async function loadAdminActivityLogs() {
+        const tbody = document.getElementById('admin-activity-logs-body');
+        if (!tbody) return;
+
+        try {
+            const res = await fetch('/api/admin/activity-logs');
+            const logs = await res.json();
+            if (!Array.isArray(logs) || logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-gray-500">No activity logged yet.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = logs.map(l => {
+                let badgeClass = 'bg-gray-500/15 text-gray-400 border-gray-500/30';
+                if (l.badge_color === 'emerald') badgeClass = 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
+                else if (l.badge_color === 'amber') badgeClass = 'bg-amber-500/15 text-amber-400 border-amber-500/30';
+                else if (l.badge_color === 'purple') badgeClass = 'bg-purple-500/15 text-purple-400 border-purple-500/30';
+                else if (l.badge_color === 'blue') badgeClass = 'bg-blue-500/15 text-blue-400 border-blue-500/30';
+                else if (l.badge_color === 'red') badgeClass = 'bg-red-500/15 text-red-400 border-red-500/30';
+                else if (l.badge_color === 'gold') badgeClass = 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30';
+
+                return `
+                <tr class="hover:bg-white/[0.02]">
+                    <td class="py-2.5 px-3 font-mono text-[11px] text-gray-400">${escapeHtml(l.time || 'Recent')}</td>
+                    <td class="py-2.5 px-3 font-semibold text-white">${escapeHtml(l.user)}</td>
+                    <td class="py-2.5 px-3">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClass} inline-flex items-center gap-1">
+                            <span>${l.icon || ''}</span>
+                            <span>${escapeHtml(l.badge)}</span>
+                        </span>
+                    </td>
+                    <td class="py-2.5 px-3">
+                        <div class="font-medium text-gray-200">${escapeHtml(l.title)}</div>
+                        <div class="text-[10px] text-gray-500">${l.details}</div>
+                    </td>
+                    <td class="py-2.5 px-3">
+                        <span class="text-[10px] font-bold font-mono ${l.status === 'APPROVED' || l.status === 'SUCCESS' || l.status === 'ONLINE' ? 'text-emerald-400' : (l.status === 'PENDING' ? 'text-amber-400' : 'text-gray-400')}">${escapeHtml(l.status)}</span>
+                    </td>
+                </tr>`;
+            }).join('');
+        } catch(e) {
+            tbody.innerHTML = '<tr><td colspan="5" class="py-6 text-center text-red-400">Failed to load activity logs.</td></tr>';
+        }
+    }
+
+    async function adminTestFamGateway() {
+        const urlInput = document.getElementById('setting-famgateway-url') || document.getElementById('setting-fampay-url');
+        const keyInput = document.getElementById('setting-famgateway-key') || document.getElementById('setting-fampay-key');
+        const priceInput = document.getElementById('setting-famgateway-price') || document.getElementById('setting-fampay-price');
+        const resBox = document.getElementById('admin-famgateway-test-result') || document.getElementById('admin-fampay-test-result');
+
+        const url = urlInput ? urlInput.value.trim() : 'https://famgateway.in';
+        const key = keyInput ? keyInput.value.trim() : '';
+        const price = priceInput ? priceInput.value.trim() : '120';
+
+        if (!key) {
+            showToast('Please enter FamGateway API Key first', 'error');
+            return;
+        }
+
+        if (resBox) {
+            resBox.classList.remove('hidden');
+            resBox.innerHTML = '<span class="text-amber-400 animate-pulse">⏳ Testing live API connection to FamGateway (' + url + ')...</span>';
+        }
+
+        try {
+            const res = await fetch('/api/admin/famgateway/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_url: url, api_key: key, amount: price })
+            });
+            const data = await res.json();
+            if (data.success) {
+                resBox.innerHTML = `
+                    <div class="text-emerald-400 font-bold flex items-center gap-1">✓ FAMGATEWAY LIVE TEST PASSED (${data.latency_ms}ms) [HTTP ${data.status_code}]</div>
+                    <div class="text-gray-400 text-[10px] mt-1">Endpoint: ${data.endpoint}</div>
+                    <div class="text-gray-300 text-[11px] mt-1">${data.message}</div>
+                    <pre class="mt-2 text-emerald-300 text-[10px] bg-black/90 p-2.5 rounded border border-emerald-900">${JSON.stringify(data.response, null, 2)}</pre>
+                `;
+            } else {
+                resBox.innerHTML = `
+                    <div class="text-amber-400 font-bold">⚠️ FAMGATEWAY RESPONDED (${data.latency_ms || 0}ms) [HTTP ${data.status_code}]</div>
+                    <div class="text-gray-400 text-[10px] mt-0.5">Endpoint: ${data.endpoint}</div>
+                    <div class="text-gray-300 text-[11px] mt-1">${data.message || data.error}</div>
+                    <pre class="mt-2 text-gray-400 text-[10px] bg-black/90 p-2.5 rounded border border-gray-800">${JSON.stringify(data.response || data, null, 2)}</pre>
+                `;
+            }
+        } catch (e) {
+            if (resBox) resBox.innerHTML = '<span class="text-red-400">✕ Network error contacting FamGateway API</span>';
+        }
+    }
+
+    async function adminSaveFamGateway(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        const btn = document.getElementById('btn-save-famgateway') || document.getElementById('btn-save-fampay');
+        if (btn) btn.disabled = true;
+
+        const urlInput = document.getElementById('setting-famgateway-url') || document.getElementById('setting-fampay-url');
+        const keyInput = document.getElementById('setting-famgateway-key') || document.getElementById('setting-fampay-key');
+        const upiInput = document.getElementById('setting-famgateway-upi') || document.getElementById('setting-fampay-upi');
+        const priceInput = document.getElementById('setting-famgateway-price') || document.getElementById('setting-fampay-price');
+        const upstreamInput = document.getElementById('setting-upstream-key');
+
+        const payload = {
+            api_url: urlInput ? urlInput.value.trim() : 'https://famgateway.in',
+            api_key: keyInput ? keyInput.value.trim() : '',
+            upi_id: upiInput ? upiInput.value.trim() : 'merchant@fam',
+            price_inr: priceInput ? priceInput.value.trim() : '120',
+            upstream_api_key: upstreamInput ? upstreamInput.value.trim() : ''
+        };
+
+        try {
+            const res = await fetch('/api/admin/famgateway/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast('FamGateway settings saved successfully!', 'success');
+                await loadPricing();
+            } else {
+                showToast(data.error || 'Failed to save settings', 'error');
+            }
+        } catch(e) {
+            showToast('Error saving settings', 'error');
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    // Aliases for compatibility
+    const adminTestFamPay = adminTestFamGateway;
+    const adminSaveFamPay = adminSaveFamGateway;
+
+    async function loadAdminSettings() {
+        try {
+            const res = await fetch('/api/admin/famgateway/config');
+            const s = await res.json();
+            if (s) {
+                const urlEl = document.getElementById('setting-famgateway-url') || document.getElementById('setting-fampay-url');
+                const keyEl = document.getElementById('setting-famgateway-key') || document.getElementById('setting-fampay-key');
+                const upiEl = document.getElementById('setting-famgateway-upi') || document.getElementById('setting-fampay-upi');
+                const priceEl = document.getElementById('setting-famgateway-price') || document.getElementById('setting-fampay-price');
+                const upstreamEl = document.getElementById('setting-upstream-key');
+                const masterKeyEl = document.getElementById('setting-master-key');
+
+                if (urlEl) urlEl.value = s.api_url || 'https://famgateway.in';
+                if (keyEl) keyEl.value = s.api_key || '';
+                if (upiEl) upiEl.value = s.upi_id || 'merchant@fam';
+                if (priceEl) priceEl.value = s.price_inr || '120'; 
+                const cPriceInr = document.getElementById('setting-custom-price-inr'); 
+                if (cPriceInr) cPriceInr.value = s.price_inr || '120';
+                const cPriceUsd = document.getElementById('setting-custom-price-usd'); 
+                if (cPriceUsd) cPriceUsd.value = s.price_usd || '1.70';
+                if (upstreamEl) upstreamEl.value = s.upstream_api_key || '';
+                if (masterKeyEl) masterKeyEl.value = s.upstream_api_key || '';
+            }
+
+            // Load contact settings
+            const cRes = await fetch('/api/contact');
+            const cData = await cRes.json();
+            if (cData) {
+                const waEl = document.getElementById('setting-contact-whatsapp');
+                const tgEl = document.getElementById('setting-contact-telegram');
+                if (waEl) waEl.value = cData.whatsapp || '6282326562316';
+                if (tgEl) tgEl.value = cData.telegram || 'ff_level_pro';
+            }
+        } catch(e) {}
+    }
+
+    async function adminTestMasterKey() {
+        const key = document.getElementById('setting-master-key')?.value.trim();
+        const btn = document.getElementById('btn-test-master-key');
+        const outBox = document.getElementById('admin-master-key-test-result');
+
+        if (!key) {
+            showToast('Please enter Master Key first', 'error');
+            return;
+        }
+
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="inline-block animate-spin mr-1">⚙</span> Testing ffglory.pro...';
+        }
+        if (outBox) {
+            outBox.classList.remove('hidden');
+            outBox.innerHTML = '<span class="text-amber-400">Connecting to ffglory.pro cluster...</span>';
+        }
+
+        try {
+            const res = await fetch('/api/admin/upstream/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ master_key: key })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast('Key verified with ffglory.pro!', 'success');
+                if (outBox) {
+                    outBox.innerHTML = `
+                        <div class="text-emerald-400 font-bold">✓ Connected to ffglory.pro Successfully!</div>
+                        <div class="text-xs text-emerald-300 font-medium">Account: <span class="text-white font-bold">${data.username || 'Authorized'}</span> | Basic Credits: <span class="text-white font-bold">${data.basic_credits ?? 0}</span> | Premium Credits: <span class="text-white font-bold">${data.premium_credits ?? 0}</span></div>
+                        <div class="text-gray-300 text-xs mt-1">HTTP Status: <span class="text-emerald-300 font-bold">${data.status_code}</span> | Latency: <span class="text-yellow-300 font-bold">${data.latency_ms}ms</span> | Max Groups: <span class="text-white">${data.max_groups || 100}</span></div>
+                        <div class="text-[10px] text-gray-500 mt-0.5">Endpoint: ${data.endpoint}</div>
+                    `;
+                }
+            } else {
+                showToast(`Probe result: HTTP ${data.status_code || 500}`, 'error');
+                if (outBox) {
+                    outBox.innerHTML = `
+                        <div class="text-red-400 font-bold">✗ Response from ffglory.pro: HTTP ${data.status_code || 500}</div>
+                        <div class="text-gray-300">${data.message || data.error || 'Key probe failed'}</div>
+                        <div class="text-[10px] text-gray-500">Latency: ${data.latency_ms || 0}ms</div>
+                    `;
+                }
+            }
+        } catch (e) {
+            showToast('Network error testing master key', 'error');
+            if (outBox) {
+                outBox.innerHTML = `<div class="text-red-400">Network connection failed: ${e.message}</div>`;
+            }
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> <span>🧪 Test Master Key</span>`;
+            }
+        }
+    }
+
+    async function adminSaveMasterKey(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        const key = document.getElementById('setting-master-key')?.value.trim();
+        const btn = document.getElementById('btn-save-master-key');
+
+        if (!key) {
+            showToast('Please enter Master Key', 'error');
+            return;
+        }
+
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = 'Saving...';
+        }
+
+        try {
+            const res = await fetch('/api/admin/upstream/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ master_key: key })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast('Master Upstream API Key saved successfully!', 'success');
+            } else {
+                showToast(data.error || 'Failed to save master key', 'error');
+            }
+        } catch (e) {
+            showToast('Network error saving master key', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> <span>💾 Set &amp; Save Master Key</span>`;
+            }
+        }
+    }
+
+    async function adminSaveContactSettings(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        const wa = document.getElementById('setting-contact-whatsapp').value.trim();
+        const tg = document.getElementById('setting-contact-telegram').value.trim();
+        const btn = document.getElementById('btn-save-contact');
+        const statusEl = document.getElementById('admin-contact-save-status');
+
+        if (!wa || !tg) {
+            showToast('Please provide both WhatsApp and Telegram details', 'error');
+            return;
+        }
+
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = 'Saving...';
+        }
+
+        try {
+            const res = await fetch('/api/admin/contact/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ whatsapp: wa, telegram: tg })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast('WhatsApp & Telegram support links updated!', 'success');
+                if (statusEl) {
+                    statusEl.classList.remove('hidden');
+                    setTimeout(() => statusEl.classList.add('hidden'), 3500);
+                }
+            } else {
+                showToast(data.error || 'Failed to update contact links', 'error');
+            }
+        } catch(err) {
+            showToast('Network error updating contact links', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> <span>💾 Save WhatsApp &amp; Telegram</span>`;
+            }
+        }
+    }
+
+    async function adminSubmitBroadcast(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        const title = document.getElementById('admin-broadcast-title').value.trim();
+        const message = document.getElementById('admin-broadcast-message').value.trim();
+        const active = document.getElementById('admin-broadcast-active').checked;
+
+        try {
+            const res = await fetch(API.adminBroadcast, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, message, active })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast('Broadcast updated for all customers!', 'success');
+            }
+        } catch(e){}
+    }
+
+    function hydrateAdminState(state) {
+        if (!state) return;
+        if (state.overview) {
+            const o = state.overview;
+            if (document.getElementById('admin-stat-users')) document.getElementById('admin-stat-users').textContent = o.total_users || 0;
+            if (document.getElementById('admin-stat-groups')) document.getElementById('admin-stat-groups').textContent = o.total_groups || 0;
+            if (document.getElementById('admin-stat-payments')) document.getElementById('admin-stat-payments').textContent = o.total_payments || 0;
+            if (document.getElementById('admin-stat-upstream-pool')) document.getElementById('admin-stat-upstream-pool').textContent = o.upstream_credits_pool || 0;
+            if (document.getElementById('admin-stat-pool-badge')) {
+                document.getElementById('admin-stat-pool-badge').className = `text-[10px] ${o.upstream_credits_pool > 0 ? 'text-emerald-400' : 'text-red-400'}`;
+                document.getElementById('admin-stat-pool-badge').textContent = o.upstream_credits_pool > 0 ? 'Live bot balance ready' : 'Empty - refill required';
+            }
+        }
+        if (state.pending_orders) renderAdminOrders(state.pending_orders);
+        if (state.users) {
+            allAdminUsers = state.users;
+            renderAdminUsers(allAdminUsers);
+        }
+        if (state.config) {
+            const c = state.config;
+            const urlEl = document.getElementById('setting-famgateway-url') || document.getElementById('setting-fampay-url');
+            const keyEl = document.getElementById('setting-famgateway-key') || document.getElementById('setting-fampay-key');
+            const upiEl = document.getElementById('setting-famgateway-upi') || document.getElementById('setting-fampay-upi');
+            const priceEl = document.getElementById('setting-famgateway-price') || document.getElementById('setting-fampay-price');
+            const masterKeyEl = document.getElementById('setting-master-key');
+
+            if (urlEl) urlEl.value = c.api_url || 'https://famgateway.in';
+            if (keyEl) keyEl.value = c.api_key || '';
+            if (upiEl) upiEl.value = c.upi_id || 'merchant@fam';
+            if (priceEl) priceEl.value = c.price_inr || '120'; const cPrice = document.getElementById('setting-custom-price-inr'); if (cPrice) cPrice.value = c.price_inr || '120';
+            if (masterKeyEl) masterKeyEl.value = c.upstream_api_key || '';
+        }
+        if (state.contact) {
+            const waEl = document.getElementById('setting-contact-whatsapp');
+            const tgEl = document.getElementById('setting-contact-telegram');
+            if (waEl) waEl.value = state.contact.whatsapp || '';
+            if (tgEl) tgEl.value = state.contact.telegram || '';
+        }
+        if (state.broadcast) {
+            const bTitle = document.getElementById('admin-broadcast-title');
+            const bMsg = document.getElementById('admin-broadcast-message');
+            const bAct = document.getElementById('admin-broadcast-active');
+            if (bTitle) bTitle.value = state.broadcast.title || '';
+            if (bMsg) bMsg.value = state.broadcast.message || '';
+            if (bAct) bAct.checked = state.broadcast.active !== false;
+        }
+    }
+
+    function decodeAdminPayload(str) {
+        if (!str) return null;
+        return JSON.parse(decodeURIComponent(escape(atob(str))));
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+        if (window.__ADMIN_SYNC__) {
+            try {
+                const state = decodeAdminPayload(window.__ADMIN_SYNC__);
+                hydrateAdminState(state);
+                return;
+            } catch(e) {}
+        }
+        initAdminDashboard();
+    });
+    </script>
+</body>
+</html>
