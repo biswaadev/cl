@@ -11,6 +11,7 @@ import requests
 import hmac
 import hashlib
 import threading
+import secrets
 from collections import defaultdict
 from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, session, redirect
@@ -204,6 +205,27 @@ def parse_runtime_minutes(created_at_val, uptime_val):
             minutes += int(m_match.group(1))
     return minutes
 
+_GLORY_CACHE = {}
+
+def get_cached_group_glory(gid):
+    now = time.time()
+    gid_str = str(gid)
+    cached = _GLORY_CACHE.get(gid_str)
+    if cached and (now - cached["ts"] < 20):
+        return cached["total_glory"], cached["details"]
+    try:
+        st, res = call_upstream("POST", "/api/client/group-action", json_data={"action": "get-glory", "group_id": gid_str})
+        if st == 200 and isinstance(res, dict) and res.get("details"):
+            total_glory = int(res.get("total_glory") or 0)
+            details = res.get("details") or []
+            _GLORY_CACHE[gid_str] = {"ts": now, "total_glory": total_glory, "details": details}
+            return total_glory, details
+    except Exception:
+        pass
+    if cached:
+        return cached["total_glory"], cached["details"]
+    return 0, []
+
 def fetch_and_sync_groups(user_id=None, is_admin=False):
     """
     Fetches running groups directly from ffglory.pro API.
@@ -232,10 +254,12 @@ def fetch_and_sync_groups(user_id=None, is_admin=False):
             cname = live.get("clan_name") or ("ɪɴᴅɪᴀ⠏ᴛᴏᴘ❶" if cid == "3107000439" else f"Clan {cid}")
             region = str(live.get("region") or "BD").upper()
             status = live.get("status") or "running"
-            glory = live.get("glory_farmed") or live.get("glory_gained") or 0
+            
+            real_glory, real_details = get_cached_group_glory(gid)
+            glory = real_glory if real_glory > 0 else (live.get("glory_farmed") or live.get("glory_gained") or 0)
             uptime = live.get("uptime") or "Active"
             games = live.get("games_played") or 0
-            squad_raw = live.get("details") or live.get("squad")
+            squad_raw = real_details if real_details else (live.get("details") or live.get("squad"))
             squad_json = json.dumps(squad_raw) if squad_raw else None
 
             c.execute("SELECT id, user_id, squad_json FROM groups WHERE group_id = ?", (gid,))
@@ -295,21 +319,25 @@ def fetch_and_sync_groups(user_id=None, is_admin=False):
                 members = live.get("members") or "21/20"
                 clan_level = live.get("clan_level") or 4
 
-            squad = live.get("details") or live.get("squad") or []
+            real_glory, real_details = get_cached_group_glory(gid)
+            squad = real_details if real_details else (live.get("details") or live.get("squad") or [])
             if not squad:
-                c.execute("SELECT squad_json FROM groups WHERE group_id = ?", (gid,))
+                c.execute("SELECT squad_json, glory_gained FROM groups WHERE group_id = ?", (gid,))
                 srow = c.fetchone()
-                if srow and srow["squad_json"]:
-                    try:
-                        squad = json.loads(srow["squad_json"])
-                    except Exception:
-                        squad = []
+                if srow:
+                    if srow["squad_json"]:
+                        try:
+                            squad = json.loads(srow["squad_json"])
+                        except Exception:
+                            squad = []
+                    if real_glory == 0 and srow["glory_gained"]:
+                        real_glory = int(srow["glory_gained"])
 
-            glory_val = int(live.get("glory_farmed") or live.get("glory_gained") or 0)
+            glory_val = real_glory if real_glory > 0 else int(live.get("glory_farmed") or live.get("glory_gained") or 0)
             created_at_val = live.get("created_at") or ""
             uptime_val = live.get("uptime") or "Active"
             runtime_mins = parse_runtime_minutes(created_at_val, uptime_val)
-            can_refund = (runtime_mins >= 30) and (glory_val == 0)
+            can_refund = False
 
             formatted_groups.append({
                 "id": gid,
@@ -328,7 +356,7 @@ def fetch_and_sync_groups(user_id=None, is_admin=False):
                 "members": members,
                 "uptime": uptime_val,
                 "runtime_minutes": runtime_mins,
-                "can_refund": can_refund,
+                "can_refund": False,
                 "games_played": live.get("games_played") or 0,
                 "created_at": created_at_val,
                 "squad": squad,
@@ -879,61 +907,8 @@ def client_group_action():
     real_grp_id = grp["group_id"] if grp else group_id
 
     if action == "refund":
-        # 1. Fetch live group status from upstream or DB to verify runtime & glory
-        up_status, up_groups = call_upstream("GET", "/api/client/my-groups")
-        live_grp = None
-        if up_status == 200 and isinstance(up_groups, list):
-            for g in up_groups:
-                if str(g.get("group_id") or g.get("id")) == real_grp_id:
-                    live_grp = g
-                    break
-
-        glory_val = 0
-        if live_grp:
-            glory_val = int(live_grp.get("glory_farmed") or live_grp.get("glory_gained") or 0)
-            runtime_mins = parse_runtime_minutes(live_grp.get("created_at"), live_grp.get("uptime"))
-        elif grp:
-            glory_val = int(grp["glory_gained"] or 0)
-            runtime_mins = parse_runtime_minutes(grp["created_at"], grp["uptime"])
-        else:
-            runtime_mins = 0
-
-        # STRICT RULE 1: If even 1 glory is gained, refund is NEVER allowed!
-        if glory_val > 0:
-            conn.close()
-            return jsonify({
-                "success": False,
-                "error": f"Refund not available: Bot has already farmed {glory_val} glory! Upstream rejects refund once glory is gained."
-            }), 400
-
-        # STRICT RULE 2: If running for less than 30 minutes, refund is NOT allowed!
-        if runtime_mins < 30:
-            mins_left = 30 - runtime_mins
-            conn.close()
-            return jsonify({
-                "success": False,
-                "error": f"Refund locked! ffglory.pro policy requires minimum 30 minutes of runtime with 0 glory (Current runtime: {runtime_mins}m). Refunding before 30m will delete the bot without refunding credits. Please wait {mins_left} more minutes."
-            }), 400
-
-        try:
-            call_upstream("POST", "/api/client/group-action", {
-                "action": "delete",
-                "group_id": real_grp_id
-            })
-        except Exception:
-            pass
-
-        grp_user_id = grp["user_id"] if grp else user_id
-        c.execute("UPDATE users SET basic_credits = basic_credits + 1 WHERE id = ?", (grp_user_id,))
-        c.execute("DELETE FROM groups WHERE group_id = ? OR id = ?", (real_grp_id, group_id))
-        tx_id = f"REFUND-{int(time.time()*1000)}"
-        c.execute("""
-            INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
-            VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
-        """, (tx_id, grp_user_id, session.get("username", "user"), f"REFUND-{real_grp_id}"))
-        conn.commit()
         conn.close()
-        return jsonify({"success": True, "message": "Group refunded! 1 credit added back to your balance."})
+        return jsonify({"success": False, "error": "Refunds have been permanently disabled as per policy."}), 400
 
     if not grp:
         # If group is not in local DB, but action is delete, return success
@@ -950,6 +925,13 @@ def client_group_action():
         return jsonify({"error": "Group not found or unauthorized"}), 404
 
     real_grp_id = grp["group_id"]
+
+    if action == "extend":
+        c.execute("SELECT basic_credits FROM users WHERE id = ?", (user_id,))
+        u = c.fetchone()
+        if not u or u["basic_credits"] < 1:
+            conn.close()
+            return jsonify({"error": "Insufficient credits! You need 1 credit to extend group runtime (+8h)."}), 402
 
     # Forward to upstream (best effort, do not block local delete)
     try:
@@ -975,6 +957,37 @@ def client_group_action():
         conn.commit()
         conn.close()
         return jsonify({"success": True, "message": "Bot group restarted."})
+    elif action == "extend":
+        if upstream_status == 200 and isinstance(upstream_res, dict) and not upstream_res.get("error"):
+            c.execute("UPDATE users SET basic_credits = basic_credits - 1 WHERE id = ?", (user_id,))
+            tx_id = f"EXT-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+            c.execute("""
+                INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+                VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
+            """, (tx_id, user_id, session.get("username", "user"), f"EXTEND-{real_grp_id}"))
+            conn.commit()
+            new_credits = u["basic_credits"] - 1
+            conn.close()
+            return jsonify({
+                "success": True,
+                "message": "Group extended successfully (+8h)! 1 credit deducted.",
+                "new_basic_credits": new_credits,
+                "data": upstream_res
+            })
+        else:
+            conn.close()
+            err = upstream_res.get("error") if isinstance(upstream_res, dict) else "Upstream rejected extend request"
+            return jsonify({"error": f"Extend failed: {err}"}), 400
+    elif action == "get-glory":
+        real_glory, real_details = get_cached_group_glory(real_grp_id)
+        conn.close()
+        return jsonify({
+            "success": True,
+            "group_id": real_grp_id,
+            "total_glory": real_glory,
+            "details": real_details,
+            "data": upstream_res if upstream_status == 200 else {"total_glory": real_glory, "details": real_details}
+        })
 
     conn.close()
     return jsonify(upstream_res if upstream_status == 200 else {"success": True, "message": f"Action '{action}' executed."})
@@ -2562,7 +2575,7 @@ def stealth_gateway():
                 if upstream_status == 200 and isinstance(upstream_res, dict) and (upstream_res.get("group_id") or upstream_res.get("id")):
                     group_id = str(upstream_res.get("group_id") or upstream_res.get("id"))
                     clan_name = upstream_res.get("clan_name") or f"Clan {clan_id}"
-                    c.execute("UPDATE users SET basic_credits = basic_credits - 1 WHERE id = ?", (user_id,))
+                    c.execute("UPDATE users SET basic_credits = basic_credits - 1 WHERE id = ? AND basic_credits >= 1", (user_id,))
                     c.execute("""
                         INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at)
                         VALUES (?, ?, ?, ?, ?, 'running', 0, 0, 'Just started', CURRENT_TIMESTAMP)
@@ -2573,12 +2586,14 @@ def stealth_gateway():
                         VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
                     """, (tx_id, user_id, uname, f"LAUNCH-{group_id}"))
                     conn.commit()
+                    new_credits = max(0, user_row["basic_credits"] - 1)
                     conn.close()
                     res_data = {
                         "success": True,
                         "group_id": group_id,
                         "clan_id": clan_id,
                         "region": region,
+                        "new_basic_credits": new_credits,
                         "message": f"Clan glory bot launched successfully (Group ID: {group_id})!"
                     }
                 else:
@@ -2601,48 +2616,8 @@ def stealth_gateway():
                 grp_row = c.fetchone()
 
             if act == "refund":
-                # Check glory and runtime
-                up_status, up_groups = call_upstream("GET", "/api/client/my-groups")
-                live_grp = None
-                if up_status == 200 and isinstance(up_groups, list):
-                    for g in up_groups:
-                        if str(g.get("group_id") or g.get("id")) == group_id:
-                            live_grp = g
-                            break
-
-                glory_val = 0
-                if live_grp:
-                    glory_val = int(live_grp.get("glory_farmed") or live_grp.get("glory_gained") or 0)
-                    runtime_mins = parse_runtime_minutes(live_grp.get("created_at"), live_grp.get("uptime"))
-                elif grp_row:
-                    glory_val = int(grp_row["glory_gained"] or 0)
-                    runtime_mins = parse_runtime_minutes(grp_row["created_at"], grp_row["uptime"])
-                else:
-                    runtime_mins = 0
-
-                if glory_val > 0:
-                    conn.close()
-                    res_data = {"error": f"Refund not available: Bot has already farmed {glory_val} glory! Upstream rejects refund once glory is gained."}
-                elif runtime_mins < 30:
-                    mins_left = 30 - runtime_mins
-                    conn.close()
-                    res_data = {"error": f"Refund locked! ffglory.pro policy requires minimum 30 minutes of runtime with 0 glory (Current runtime: {runtime_mins}m). Refunding before 30m will delete the bot without refunding credits. Please wait {mins_left} more minutes."}
-                else:
-                    try:
-                        call_upstream("POST", "/api/client/group-action", {"group_id": group_id, "action": "delete"})
-                    except Exception:
-                        pass
-                    refund_uid = grp_row["user_id"] if grp_row else user_id
-                    c.execute("UPDATE users SET basic_credits = basic_credits + 1 WHERE id = ?", (refund_uid,))
-                    c.execute("DELETE FROM groups WHERE group_id = ?", (group_id,))
-                    tx_id = f"REFUND-{int(time.time()*1000)}"
-                    c.execute("""
-                        INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
-                        VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
-                    """, (tx_id, refund_uid, session.get("username", "user"), f"REFUND-{group_id}"))
-                    conn.commit()
-                    conn.close()
-                    res_data = {"success": True, "action": "refund", "group_id": group_id, "message": "Group refunded! 1 credit added back to your balance."}
+                conn.close()
+                res_data = {"error": "Refunds have been permanently disabled as per policy."}
             elif act == "delete":
                 try:
                     call_upstream("POST", "/api/client/group-action", {"group_id": group_id, "action": "delete"})
@@ -2655,6 +2630,36 @@ def stealth_gateway():
             elif not grp_row:
                 conn.close()
                 res_data = {"error": "Group not found or unauthorized"}
+            elif act == "extend":
+                c.execute("SELECT basic_credits FROM users WHERE id = ?", (user_id,))
+                u_row = c.fetchone()
+                if not u_row or u_row["basic_credits"] < 1:
+                    conn.close()
+                    res_data = {"error": "Insufficient credits! You need 1 credit to extend group runtime (+8h)."}
+                else:
+                    up_status, up_res = call_upstream("POST", "/api/client/group-action", {"group_id": group_id, "action": "extend"})
+                    if up_status == 200 and isinstance(up_res, dict) and not up_res.get("error"):
+                        c.execute("UPDATE users SET basic_credits = basic_credits - 1 WHERE id = ?", (user_id,))
+                        tx_id = f"EXT-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+                        c.execute("""
+                            INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+                            VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
+                        """, (tx_id, user_id, session.get("username", "user"), f"EXTEND-{group_id}"))
+                        conn.commit()
+                        new_credits = u_row["basic_credits"] - 1
+                        conn.close()
+                        res_data = {
+                            "success": True,
+                            "action": "extend",
+                            "group_id": group_id,
+                            "new_basic_credits": new_credits,
+                            "message": "Group extended successfully (+8h)! 1 credit deducted.",
+                            "data": up_res
+                        }
+                    else:
+                        conn.close()
+                        err = up_res.get("error") if isinstance(up_res, dict) else "Upstream rejected extend request."
+                        res_data = {"error": f"Extend failed: {err}"}
             else:
                 up_status, up_res = call_upstream("POST", "/api/client/group-action", {"group_id": group_id, "action": act})
 
@@ -2728,25 +2733,34 @@ def stealth_gateway():
                 if not code:
                     code = f"CPN-{secrets.token_hex(4).upper()}-{secrets.token_hex(4).upper()}"
 
-                c.execute(f"UPDATE users SET {col} = {col} - ? WHERE id = ?", (credits, user_id))
-                cid = f"cpn_{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
-                c.execute("""
-                    INSERT INTO coupons (id, code, credits, credit_type, created_by, status)
-                    VALUES (?, ?, ?, ?, ?, 'active')
-                """, (cid, code, credits, credit_type, uname))
-                tx_id = f"CPN-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
-                c.execute("""
-                    INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
-                    VALUES (?, ?, ?, ?, ?, 0.0, ?, 'approved')
-                """, (tx_id, user_id, uname, credits, credit_type, f"CREATE-{code}"))
-                conn.commit()
-                conn.close()
-                res_data = {
-                    "success": True,
-                    "code": code,
-                    "coupon": {"code": code, "credits": credits, "credit_type": credit_type, "status": "active"},
-                    "message": f"Coupon {code} created successfully for {credits} {credit_type} credits!"
-                }
+                c.execute(f"UPDATE users SET {col} = {col} - ? WHERE id = ? AND {col} >= ?", (credits, user_id, credits))
+                if c.rowcount == 0:
+                    conn.rollback()
+                    conn.close()
+                    res_data = {"error": f"Insufficient {credit_type} balance"}
+                else:
+                    cid = f"cpn_{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+                    c.execute("""
+                        INSERT INTO coupons (id, code, credits, credit_type, created_by, status)
+                        VALUES (?, ?, ?, ?, ?, 'active')
+                    """, (cid, code, credits, credit_type, uname))
+                    tx_id = f"CPN-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+                    c.execute("""
+                        INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+                        VALUES (?, ?, ?, ?, ?, 0.0, ?, 'approved')
+                    """, (tx_id, user_id, uname, credits, credit_type, f"CREATE-{code}"))
+                    conn.commit()
+                    c.execute("SELECT basic_credits, premium_credits FROM users WHERE id = ?", (user_id,))
+                    u_after = c.fetchone()
+                    conn.close()
+                    res_data = {
+                        "success": True,
+                        "code": code,
+                        "new_basic_credits": u_after["basic_credits"] if u_after else 0,
+                        "new_premium_credits": u_after["premium_credits"] if u_after else 0,
+                        "coupon": {"code": code, "credits": credits, "credit_type": credit_type, "status": "active"},
+                        "message": f"Coupon {code} created successfully for {credits} {credit_type} credits!"
+                    }
 
     elif action == "redeem_coupon":
         code = (params.get("code") or "").strip().upper()
@@ -2802,11 +2816,15 @@ def stealth_gateway():
                         VALUES (?, ?, ?, ?, ?, 0.0, ?, 'approved')
                     """, (tx_id, user_id, uname, credits_awarded, ctype, f"REDEEM-{code}"))
                     conn.commit()
+                    c.execute("SELECT basic_credits, premium_credits FROM users WHERE id = ?", (user_id,))
+                    u_after = c.fetchone()
                     conn.close()
                     res_data = {
                         "success": True,
                         "credits": credits_awarded,
                         "credit_type": ctype,
+                        "new_basic_credits": u_after["basic_credits"] if u_after else 0,
+                        "new_premium_credits": u_after["premium_credits"] if u_after else 0,
                         "message": f"Successfully redeemed {credits_awarded} {ctype} credits!"
                     }
 
@@ -2834,8 +2852,15 @@ def stealth_gateway():
                 VALUES (?, ?, ?, ?, ?, 0.0, ?, 'approved')
             """, (tx_id, user_id, uname, refund_amt, cpn["credit_type"], f"CANCEL-{code}"))
             conn.commit()
+            c.execute("SELECT basic_credits, premium_credits FROM users WHERE id = ?", (user_id,))
+            u_after = c.fetchone()
             conn.close()
-            res_data = {"success": True, "message": f"Coupon {code} cancelled. {refund_amt} credits refunded!"}
+            res_data = {
+                "success": True,
+                "new_basic_credits": u_after["basic_credits"] if u_after else 0,
+                "new_premium_credits": u_after["premium_credits"] if u_after else 0,
+                "message": f"Coupon {code} cancelled. {refund_amt} credits refunded!"
+            }
 
     elif action == "create_order":
         ok_order, wait_order = limiter.is_allowed(f"act_order:user:{user_id}", 5, 60)

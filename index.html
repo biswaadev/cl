@@ -2288,76 +2288,7 @@
         </div>
     </div>
 
-    <!-- Refund Modal -->
-    <div id="refund-modal"
-        class="fixed inset-0 bg-black/70 hidden flex items-center justify-center z-50 backdrop-blur-md p-4">
-        <div
-            class="ng-card p-5 md:p-6 max-w-sm w-full transform transition-all scale-100 modal-slide-up border-blue-500/20">
-            <h3 class="ng-section-title mb-4">
-                <div class="ng-section-icon"
-                    style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(59, 130, 246, 0.1)); border: 1px solid rgba(59, 130, 246, 0.3);">
-                    <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
-                    </svg>
-                </div>
-                <span class="text-blue-400">Request Refund</span>
-            </h3>
 
-            <!-- Step 1: Info -->
-            <div id="refund-step-info">
-                <div class="space-y-3 text-sm text-gray-300 mb-6">
-                    <p>You can request a refund if:</p>
-                    <ul class="list-disc list-inside space-y-1 text-gray-400 ml-2">
-                        <li>Group has been running for &gt; 30 mins</li>
-                        <li>Total Glory gained is 0</li>
-                    </ul>
-                    <div class="bg-blue-500/10 p-3 rounded-xl border border-blue-500/30 mt-4">
-                        <p class="text-xs text-blue-200">If eligible, the group will be deleted and <span
-                                class="font-bold text-white">1 Credit</span> will be returned to your account.</p>
-                    </div>
-                </div>
-                <div class="flex flex-col-reverse sm:flex-row gap-3">
-                    <button onclick="closeRefundModal()"
-                        class="flex-1 py-2.5 px-4 ng-btn-outline font-medium">Cancel</button>
-                    <button id="refund-check-btn" class="flex-1 py-2.5 px-4 ng-btn-primary font-semibold">Check &
-                        Refund</button>
-                </div>
-            </div>
-
-            <!-- Step 2: Result -->
-            <div id="refund-step-result" class="hidden text-center">
-                <div id="refund-icon"
-                    class="mx-auto mb-4 flex items-center justify-center w-16 h-16 rounded-full bg-black/30 text-3xl">
-                </div>
-                <h4 id="refund-title" class="text-lg font-bold mb-2"></h4>
-                <p id="refund-message" class="text-sm text-gray-300 mb-6"></p>
-
-                <div id="refund-credits-change"
-                    class="hidden bg-black/30 p-4 rounded-xl border border-white/10 mb-6 space-y-2">
-                    <div class="flex justify-between items-center text-sm">
-                        <span class="text-blue-400">🔵 Basic Credits</span>
-                        <div class="flex items-center gap-2">
-                            <span id="refund-old-basic" class="text-gray-500 line-through"></span>
-                            <span class="text-gray-400">→</span>
-                            <span id="refund-new-basic" class="text-green-400 font-bold"></span>
-                        </div>
-                    </div>
-                    <div class="flex justify-between items-center text-sm">
-                        <span class="text-yellow-400">⭐ Premium Credits</span>
-                        <div class="flex items-center gap-2">
-                            <span id="refund-old-premium" class="text-gray-500 line-through"></span>
-                            <span class="text-gray-400">→</span>
-                            <span id="refund-new-premium" class="text-green-400 font-bold"></span>
-                        </div>
-                    </div>
-                </div>
-
-                <button onclick="closeRefundModal()"
-                    class="w-full py-2.5 px-4 rounded-lg bg-gray-700 hover:bg-gray-600 text-white font-bold transition">Close</button>
-            </div>
-        </div>
-    </div>
 
     <!-- Message Modal -->
     <div id="message-modal"
@@ -2880,6 +2811,41 @@
                                         </div>
                                     </div>
 
+                                    <!-- 4 Bot Accounts & Individual Glory Breakdown -->
+                                    <div class="mb-3 p-3 rounded-xl bg-black/45 border border-[#3b3528] relative z-10">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <span class="text-[11px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5 font-['Rajdhani']">
+                                                <span>🤖</span>
+                                                <span>Guild Bot Squad Glory Contribution</span>
+                                            </span>
+                                            <span class="text-[10px] text-gray-400 font-mono">${bots.length || 4} Bots Active</span>
+                                        </div>
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            ${(bots.length > 0 ? bots : [
+                                                { nickname: 'Bot #1 (Active)', account_id: gid, glory: Math.round(Number(glory)/4), level: 2 },
+                                                { nickname: 'Bot #2 (Active)', account_id: gid, glory: Math.round(Number(glory)/4), level: 2 },
+                                                { nickname: 'Bot #3 (Active)', account_id: gid, glory: Math.round(Number(glory)/4), level: 2 },
+                                                { nickname: 'Bot #4 (Active)', account_id: gid, glory: Math.round(Number(glory)/4), level: 2 }
+                                            ]).map((b, bi) => `
+                                                <div class="p-2 rounded-lg bg-[#191714] border border-[#332d23] flex items-center justify-between gap-2 hover:border-amber-500/30 transition-all">
+                                                    <div class="flex items-center gap-2 min-w-0">
+                                                        <span class="w-6 h-6 rounded flex items-center justify-center bg-black/60 border border-amber-500/20 text-amber-400 font-mono text-[10px] font-bold shrink-0">#${bi+1}</span>
+                                                        <div class="min-w-0">
+                                                            <p class="text-[11px] font-bold text-white font-mono truncate" title="${escapeHtml(b.nickname || 'Bot')}">${escapeHtml(b.nickname || 'Bot')}</p>
+                                                            <p class="text-[9px] text-gray-400 font-mono truncate">UID: ${escapeHtml(b.account_id || '')}</p>
+                                                        </div>
+                                                    </div>
+                                                    <div class="text-right shrink-0">
+                                                        <span class="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono font-bold text-[11px] block">
+                                                            +${b.glory || 0} Glory
+                                                        </span>
+                                                        <span class="text-[9px] text-gray-500 font-mono">Lv.${b.level || 1} • 100% CS</span>
+                                                    </div>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+
                                     <!-- Action Buttons -->
                                     <div class="flex flex-wrap gap-2 relative z-10 group-classic-actions">
                                         <button onclick="groupAction('${gid}', 'restart')" class="ng-btn-warning text-xs py-2.5 px-3 flex items-center justify-center gap-1.5 flex-1 min-w-[calc(50%-0.25rem)] sm:flex-none sm:min-w-0">
@@ -2898,20 +2864,6 @@
                                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                             Delete
                                         </button>
-                                        ${g.can_refund ? `
-                                        <button onclick="groupAction('${gid}', 'refund')" class="ng-btn-outline text-xs py-2.5 px-3 flex items-center justify-center gap-1.5 w-full sm:w-auto sm:flex-none text-amber-300 border-amber-500/40 hover:bg-amber-500/10 font-bold">
-                                            <svg class="w-3.5 h-3.5 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
-                                            Refund Credit (30m+ & 0 Glory)
-                                        </button>
-                                        ` : (Number(g.glory_gained || 0) > 0 ? `
-                                        <div class="text-[11px] px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center gap-1.5">
-                                            <span>🛡️</span> <span>Glory Farmed (${g.glory_gained}) • Refund locked</span>
-                                        </div>
-                                        ` : `
-                                        <div class="text-[11px] px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300/80 flex items-center gap-1.5" title="ffglory policy requires minimum 30 minutes of runtime with 0 glory before refund">
-                                            <span>⏱️</span> <span>Refund in ${Math.max(1, 30 - (g.runtime_minutes || 0))}m (if 0 glory)</span>
-                                        </div>
-                                        `)}
                                         <button id="extend-btn-${gid}" onclick="groupExtend('${gid}', false, 1)" class="ng-btn-outline text-xs py-2.5 px-3 flex items-center justify-center gap-1.5 w-full sm:w-auto sm:flex-none">
                                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path></svg>
                                             Continue! (+8h) · 1 credit
@@ -3374,16 +3326,16 @@
         const tier = (reg?.tier || 'basic').toLowerCase();
         const isPremium = (tier === 'premium');
         const tierLabel = isPremium ? 'Premium' : 'Basic';
-        const userCredits = isPremium ? (currentUser?.premium_credits || 0) : (currentUser?.basic_credits || 0);
+        const userCredits = (currentUser?.basic_credits || 0) + (isPremium ? (currentUser?.premium_credits || 0) : 0);
 
         if (userCredits < 1) {
             btn.disabled = true;
             btn.classList.add('opacity-50', 'cursor-not-allowed');
-            btnText.textContent = `Insufficient ${tierLabel} Credits (Need 1, Have ${userCredits})`;
+            btnText.textContent = `Insufficient Credits (Need 1, Have ${currentUser?.basic_credits || 0})`;
         } else {
             btn.disabled = false;
             btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            btnText.textContent = `Start Group (1 ${tierLabel} Credit)`;
+            btnText.textContent = `Start Group (1 Credit)`;
         }
     }
 
@@ -3709,6 +3661,10 @@
             const data = await sendGateway('launch_group', { clan_id: clanId, region: region });
 
             if (data && data.success) {
+                if (data.new_basic_credits !== undefined && currentUser) {
+                    currentUser.basic_credits = data.new_basic_credits;
+                    renderUserData(currentUser);
+                }
                 if (progressBar) progressBar.style.width = '100%';
                 if (progressLabel) progressLabel.textContent = 'Bots running!';
                 if (liveStatus) liveStatus.textContent = '3/3 Bot group active and farming glory!';
@@ -3742,6 +3698,12 @@
                 if (launchMsg) {
                     launchMsg.className = 'mt-3 p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 font-semibold text-xs text-center';
                     launchMsg.innerHTML = `✅ Clan ${clanId} glory bot running! Group ID: <strong>${data.group_id}</strong>`;
+                }
+                if (data.new_basic_credits !== undefined && currentUser) {
+                    currentUser.basic_credits = data.new_basic_credits;
+                    const bEl = document.getElementById('basic-credits-val');
+                    if (bEl) bEl.textContent = data.new_basic_credits;
+                    updateLaunchButton();
                 }
                 await loadUserData();
                 await loadMyGroups();
@@ -3819,17 +3781,23 @@
         if (action === 'delete') {
             if (!confirm('Are you sure you want to delete this bot group?')) return;
         }
-        if (action === 'refund') {
-            if (!confirm('Are you sure you want to refund this group? 1 credit will be returned to your wallet.')) return;
-        }
         try {
             const data = await sendGateway('group_action', { action, group_id: groupId });
             if (data && data.success) {
                 if (action === 'get-glory') {
                     showGloryModal(data.data || {}, groupId);
+                    if (typeof loadMyGroups === 'function') {
+                        loadMyGroups();
+                    }
                 } else {
                     showToast(data.message || `Action ${action} executed successfully`, 'success');
-                    if (action === 'refund' || action === 'delete') {
+                    if (data.new_basic_credits !== undefined && currentUser) {
+                        currentUser.basic_credits = data.new_basic_credits;
+                        const bEl = document.getElementById('basic-credits-val');
+                        if (bEl) bEl.textContent = data.new_basic_credits;
+                        updateLaunchButton();
+                    }
+                    if (action === 'delete') {
                         const card = document.getElementById(`card-${groupId}`);
                         if (card) card.remove();
                     }
@@ -3972,6 +3940,10 @@
             const data = await sendGateway('create_coupon', { credits: amount, credit_type: 'basic' });
             if (data.success) {
                 const code = (data.coupon && data.coupon.code) || data.code || '';
+                if (data.new_basic_credits !== undefined && currentUser) {
+                    currentUser.basic_credits = data.new_basic_credits;
+                    renderUserData(currentUser);
+                }
                 showToast(`Generated Coupon: ${code}`, 'success');
                 document.getElementById('coupon-stock-alert')?.classList.add('hidden');
                 loadUserData();
@@ -3997,6 +3969,10 @@
         try {
             const data = await sendGateway('cancel_coupon', { code });
             if (data.success) {
+                if (data.new_basic_credits !== undefined && currentUser) {
+                    currentUser.basic_credits = data.new_basic_credits;
+                    renderUserData(currentUser);
+                }
                 showToast(data.message || 'Coupon cancelled & refunded!', 'success');
                 loadUserData();
                 loadMyCoupons();
@@ -4019,6 +3995,10 @@
         try {
             const data = await sendGateway('redeem_coupon', { code });
             if (data.success) {
+                if (data.new_basic_credits !== undefined && currentUser) {
+                    currentUser.basic_credits = data.new_basic_credits;
+                    renderUserData(currentUser);
+                }
                 showToast(data.message || 'Coupon redeemed!', 'success');
                 input.value = '';
                 loadUserData();
