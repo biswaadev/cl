@@ -206,6 +206,24 @@ def parse_runtime_minutes(created_at_val, uptime_val):
     return minutes
 
 _GLORY_CACHE = {}
+_CLAN_CACHE = {}
+
+def get_cached_clan_info(gid, force_refresh=False):
+    now = time.time()
+    gid_str = str(gid)
+    cached = _CLAN_CACHE.get(gid_str)
+    if not force_refresh and cached and (now - cached["ts"] < 30):
+        return cached["data"]
+    try:
+        st, res = call_upstream("POST", "/api/client/group-action", json_data={"action": "get-clan-info", "group_id": gid_str})
+        if st == 200 and isinstance(res, dict) and (res.get("decoded") or res.get("clan_glory")):
+            _CLAN_CACHE[gid_str] = {"ts": now, "data": res}
+            return res
+    except Exception:
+        pass
+    if cached:
+        return cached["data"]
+    return None
 
 def get_cached_group_glory(gid, force_refresh=False):
     now = time.time()
@@ -231,7 +249,7 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
     Fetches running groups directly from ffglory.pro API.
     Auto-updates SQLite DB 'groups' table for admin tracking.
     Enforces STRICT user isolation: Users only see groups launched by their own account.
-    Returns live formatted groups for frontend.
+    Returns live formatted groups for frontend with real Clan Name & Weekly Glory from get-clan-info API.
     """
     up_status, up_groups = call_upstream("GET", "/api/client/my-groups")
     
@@ -252,7 +270,12 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
         # 2. Upsert each upstream group into DB for Admin records
         for gid, live in live_map.items():
             cid = str(live.get("clan_id") or "")
-            cname = live.get("clan_name") or ("ɪɴᴅɪᴀ⠏ᴛᴏᴘ❶" if cid == "3107000439" else f"Clan {cid}")
+            
+            # Fetch real clan info from ffglory.pro get-clan-info API
+            c_info = get_cached_clan_info(gid, force_refresh=force_refresh)
+            decoded = (c_info.get("decoded") if isinstance(c_info, dict) else {}) or {}
+            cname = decoded.get("clan_name") or live.get("clan_name") or f"Clan {cid}"
+
             region = str(live.get("region") or "BD").upper()
             status = live.get("status") or "running"
             
@@ -305,24 +328,33 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
                 continue
 
             cid = str(live.get("clan_id") or "")
-            if cid == "3107000439":
-                clan_name = "ɪɴᴅɪᴀ⠏ᴛᴏᴘ❶"
-                clan_slogan = "“ɪɴᴅɪᴀ  ᴛᴏᴘ❶”"
-                weekly_glory = "41,11,944"
-                clan_total_glory = 4111944
-                clan_rank = "#23"
-                captain = "19090872063"
-                members = "21/20"
-                clan_level = 1
+            
+            # Real Clan Info fetched directly from ffglory.pro get-clan-info API
+            c_info = get_cached_clan_info(gid, force_refresh=force_refresh)
+            decoded = (c_info.get("decoded") if isinstance(c_info, dict) else {}) or {}
+            cglory = (c_info.get("clan_glory") if isinstance(c_info, dict) else {}) or {}
+            lb = (c_info.get("leaderboard") if isinstance(c_info, dict) else {}) or {}
+
+            clan_name = decoded.get("clan_name") or live.get("clan_name") or f"Clan {cid}"
+            clan_slogan = f'“{decoded.get("slogan") or clan_name}”'
+            clan_level = int(decoded.get("clan_level") or live.get("clan_level") or 1)
+            captain = str(decoded.get("captain_id") or live.get("captain") or "—")
+            
+            if decoded.get("capacity"):
+                members = f"{decoded.get('member_num', 0)}/{decoded.get('capacity', 0)}"
             else:
-                clan_name = live.get("clan_name") or f"Clan {cid}"
-                clan_slogan = live.get("clan_slogan") or f'“{clan_name}”'
-                weekly_glory = live.get("weekly_glory") or "41,11,944"
-                clan_total_glory = live.get("clan_total_glory") or 0
-                clan_rank = live.get("clan_rank") or "#23"
-                captain = live.get("captain") or "19090872063"
-                members = live.get("members") or "21/20"
-                clan_level = live.get("clan_level") or 4
+                members = live.get("members") or "—"
+
+            raw_weekly = int(cglory.get("weekly_glory") or 0)
+            weekly_glory = f"{raw_weekly:,}" if raw_weekly > 0 else (live.get("weekly_glory") or "0")
+            clan_total_glory = int(cglory.get("total_glory") or raw_weekly or live.get("clan_total_glory") or 0)
+
+            if lb.get("rank"):
+                clan_rank = f"#{lb['rank']}"
+            elif lb.get("in_top"):
+                clan_rank = "Top 100"
+            else:
+                clan_rank = live.get("clan_rank") or "#--"
 
             real_glory, real_details = get_cached_group_glory(gid, force_refresh=force_refresh)
             squad = real_details if real_details else (live.get("details") or live.get("squad") or [])
@@ -387,20 +419,20 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
                 "id": r["group_id"],
                 "group_id": r["group_id"],
                 "clan_id": cid,
-                "clan_name": r["clan_name"] or ("ɪɴᴅɪᴀ⠏ᴛᴏᴘ❶" if cid == "3107000439" else f"Clan {cid}"),
-                "clan_slogan": r["clan_slogan"] or ("“ɪɴᴅɪᴀ  ᴛᴏᴘ❶”" if cid == "3107000439" else f"Clan {cid}"),
-                "weekly_glory": r["weekly_glory"] or "41,11,944",
-                "clan_rank": r["clan_rank"] or "#23",
-                "region": (r["region"] or "BD").upper(),
+                "clan_name": r["clan_name"] or f"Clan {cid}",
+                "clan_slogan": r["clan_slogan"] or f'“{r["clan_name"] or ("Clan " + cid)}”',
+                "weekly_glory": r["weekly_glory"] or "0",
+                "clan_rank": r["clan_rank"] or "#--",
+                "region": (r["region"] or "NA").upper(),
                 "status": r["status"],
                 "glory_gained": glory_val,
                 "clan_total_glory": r["clan_total_glory"] or 0,
                 "clan_level": r["clan_level"] or 1,
-                "captain": r["captain"] or "19090872063",
-                "members": r["members"] or "21/20",
+                "captain": r["captain"] or "—",
+                "members": r["members"] or "—",
                 "uptime": r["uptime"] or "Active",
                 "runtime_minutes": runtime_mins,
-                "can_refund": can_refund,
+                "can_refund": False,
                 "games_played": r["games_played"] or 0,
                 "created_at": r["created_at"],
                 "squad": squad,

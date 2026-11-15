@@ -2569,19 +2569,19 @@
         // Group by clan_id
         const clansMap = {};
         groups.forEach(g => {
-            const cid = String(g.clan_id || '3107000439');
+            const cid = String(g.clan_id || '');
             if (!clansMap[cid]) {
                 clansMap[cid] = {
                     clan_id: cid,
-                    clan_name: g.clan_name || (cid === '3107000439' ? 'ɪɴᴅɪᴀ⠏ᴛᴏᴘ❶' : 'Clan ' + cid),
-                    clan_slogan: g.clan_slogan || (cid === '3107000439' ? '“ɪɴᴅɪᴀ  ᴛᴏᴘ❶”' : '“' + (g.clan_name || 'Clan ' + cid) + '”'),
+                    clan_name: g.clan_name || (cid ? 'Clan ' + cid : 'My Clan'),
+                    clan_slogan: g.clan_slogan || '“' + (g.clan_name || 'Glory Squad') + '”',
                     clan_level: g.clan_level || 1,
-                    region: (g.region || 'BD').toUpperCase(),
-                    weekly_glory: g.weekly_glory || '41,11,944',
-                    clan_total_glory: g.clan_total_glory || '41,11,944',
-                    clan_rank: g.clan_rank || '#23',
-                    members: g.members || '21/20',
-                    captain: g.captain || '19090872063',
+                    region: (g.region || 'NA').toUpperCase(),
+                    weekly_glory: g.weekly_glory || '0',
+                    clan_total_glory: g.clan_total_glory || '0',
+                    clan_rank: g.clan_rank || '#--',
+                    members: g.members || '—',
+                    captain: g.captain || '—',
                     groups: []
                 };
             }
@@ -2808,41 +2808,6 @@
                                             <div class="w-full h-full rounded-full bg-black/50 overflow-hidden">
                                                 <div class="h-full rounded-full transition-all duration-1000 bg-gradient-to-r from-amber-600 to-amber-400" style="width: 75%"></div>
                                             </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- 4 Bot Accounts & Individual Glory Breakdown -->
-                                    <div class="mb-3 p-3 rounded-xl bg-black/45 border border-[#3b3528] relative z-10">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <span class="text-[11px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5 font-['Rajdhani']">
-                                                <span>🤖</span>
-                                                <span>Guild Bot Squad Glory Contribution</span>
-                                            </span>
-                                            <span class="text-[10px] text-gray-400 font-mono">${bots.length || 4} Bots Active</span>
-                                        </div>
-                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                            ${(bots.length > 0 ? bots : [
-                                                { nickname: 'Bot #1 (Active)', account_id: gid, glory: Math.round(Number(glory)/4), level: 2 },
-                                                { nickname: 'Bot #2 (Active)', account_id: gid, glory: Math.round(Number(glory)/4), level: 2 },
-                                                { nickname: 'Bot #3 (Active)', account_id: gid, glory: Math.round(Number(glory)/4), level: 2 },
-                                                { nickname: 'Bot #4 (Active)', account_id: gid, glory: Math.round(Number(glory)/4), level: 2 }
-                                            ]).map((b, bi) => `
-                                                <div class="p-2 rounded-lg bg-[#191714] border border-[#332d23] flex items-center justify-between gap-2 hover:border-amber-500/30 transition-all">
-                                                    <div class="flex items-center gap-2 min-w-0">
-                                                        <span class="w-6 h-6 rounded flex items-center justify-center bg-black/60 border border-amber-500/20 text-amber-400 font-mono text-[10px] font-bold shrink-0">#${bi+1}</span>
-                                                        <div class="min-w-0">
-                                                            <p class="text-[11px] font-bold text-white font-mono truncate" title="${escapeHtml(b.nickname || 'Bot')}">${escapeHtml(b.nickname || 'Bot')}</p>
-                                                            <p class="text-[9px] text-gray-400 font-mono truncate">UID: ${escapeHtml(b.account_id || '')}</p>
-                                                        </div>
-                                                    </div>
-                                                    <div class="text-right shrink-0">
-                                                        <span class="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono font-bold text-[11px] block">
-                                                            +${b.glory || 0} Glory
-                                                        </span>
-                                                        <span class="text-[9px] text-gray-500 font-mono">Lv.${b.level || 1} • 100% CS</span>
-                                                    </div>
-                                                </div>
-                                            `).join('')}
                                         </div>
                                     </div>
 
