@@ -18,6 +18,7 @@ from db import get_db, hash_password, init_db
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 app.secret_key = 'ffglory_prod_secret_84b879661bf49d33'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 UPSTREAM_BASE = "https://ffglory.pro"
 
@@ -529,7 +530,7 @@ def serve_index():
     state_json = json.dumps(state)
     state_b64 = base64.b64encode(state_json.encode("utf-8")).decode("utf-8")
 
-    with open("/home/monuhortanti71/ffglory-web/index.html", "r", encoding="utf-8") as f:
+    with open(os.path.join(BASE_DIR, "index.html"), "r", encoding="utf-8") as f:
         html = f.read()
 
     injection = f'<script id="__SYS_SYNC__">window.__INITIAL_SYNC__="{state_b64}";</script>'
@@ -543,7 +544,7 @@ def serve_login():
         if session.get("role") == "admin":
             return redirect("/admin")
         return redirect("/")
-    return send_from_directory(".", "login.html")
+    return send_from_directory(BASE_DIR, "login.html")
 
 @app.route("/admin")
 @app.route("/admin.html")
@@ -556,7 +557,7 @@ def serve_admin():
     admin_state = get_admin_dashboard_state()
     state_b64 = base64.b64encode(json.dumps(admin_state).encode("utf-8")).decode("utf-8")
 
-    with open("/home/monuhortanti71/ffglory-web/admin.html", "r", encoding="utf-8") as f:
+    with open(os.path.join(BASE_DIR, "admin.html"), "r", encoding="utf-8") as f:
         html = f.read()
 
     injection = f'<script id="__ADMIN_SYNC__">window.__ADMIN_SYNC__="{state_b64}";</script>'
@@ -570,34 +571,34 @@ def direct_logout():
 
 @app.route("/shared.css")
 def serve_css():
-    return send_from_directory(".", "shared.css", mimetype="text/css")
+    return send_from_directory(BASE_DIR, "shared.css", mimetype="text/css")
 
 @app.route("/shared.js")
 def serve_shared_js():
-    return send_from_directory(".", "shared.js", mimetype="application/javascript")
+    return send_from_directory(BASE_DIR, "shared.js", mimetype="application/javascript")
 
 @app.route("/login.js")
 def serve_login_js():
-    return send_from_directory(".", "login.js", mimetype="application/javascript")
+    return send_from_directory(BASE_DIR, "login.js", mimetype="application/javascript")
 
 @app.route("/favicon.ico")
 def serve_favicon():
-    return send_from_directory(".", "favicon.ico", mimetype="image/png")
+    return send_from_directory(BASE_DIR, "favicon.ico", mimetype="image/png")
 
 @app.route("/clan.png")
 def serve_clan_png():
-    return send_from_directory(".", "clan.png", mimetype="image/png")
+    return send_from_directory(BASE_DIR, "clan.png", mimetype="image/png")
 
 @app.route("/assets/<path:path>")
 def serve_assets(path):
-    return send_from_directory("assets", path)
+    return send_from_directory(os.path.join(BASE_DIR, "assets"), path)
 
 @app.route("/download")
 @app.route("/download.zip")
 @app.route("/download/project.zip")
 @app.route("/ffglory_backup.zip")
 def download_backup_zip():
-    return send_from_directory(".", "ffglory_backup.zip", as_attachment=True, download_name="ffglory_project.zip")
+    return send_from_directory(BASE_DIR, "ffglory_backup.zip", as_attachment=True, download_name="ffglory_project.zip")
 
 # ==================== AUTHENTICATION (SQLITE) ====================
 
@@ -2946,5 +2947,6 @@ def stealth_gateway():
 
 if __name__ == "__main__":
     init_db()
-    print("Starting FFGlory Reseller Web Production Server on 0.0.0.0:8080...")
-    app.run(host="0.0.0.0", port=8080, debug=False)
+    port = int(os.environ.get("PORT", 8080))
+    print(f"Starting FFGlory Reseller Web Production Server on 0.0.0.0:{port}...")
+    app.run(host="0.0.0.0", port=port, debug=False)
