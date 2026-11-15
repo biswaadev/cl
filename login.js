@@ -1,24 +1,6 @@
 // FFGlory Panel Login & Registration Controller
 'use strict';
 
-var turnstileToken = '';
-
-window.onTurnstileSuccess = function(token) {
-    turnstileToken = token;
-    var btn = document.getElementById('signup-btn');
-    if (btn) btn.disabled = false;
-};
-
-window.onTurnstileExpired = function() {
-    turnstileToken = '';
-};
-
-// Enable signup button automatically so users on non-production/tunnel are never blocked
-setTimeout(function() {
-    var btn = document.getElementById('signup-btn');
-    if (btn) btn.disabled = false;
-}, 1200);
-
 function switchAuthTab(tab) {
     var loginTab = document.getElementById('login-tab');
     var signupTab = document.getElementById('signup-tab');
