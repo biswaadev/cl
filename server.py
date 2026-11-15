@@ -648,7 +648,9 @@ def serve_login_js():
 
 @app.route("/favicon.ico")
 def serve_favicon():
-    return send_from_directory(BASE_DIR, "favicon.ico", mimetype="image/png")
+    res = send_from_directory(BASE_DIR, "favicon.ico", mimetype="image/x-icon")
+    res.headers["Cache-Control"] = "public, max-age=86400"
+    return res
 
 @app.route("/clan.png")
 def serve_clan_png():
