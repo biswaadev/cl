@@ -96,7 +96,8 @@ def import_json_to_sqlite(data):
                 c.execute('''
                     INSERT INTO users (id, username, password_hash, role, basic_credits, premium_credits, max_groups, is_banned, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(username) DO UPDATE SET
+                    ON CONFLICT(id) DO UPDATE SET
+                        username=excluded.username,
                         password_hash=excluded.password_hash,
                         role=excluded.role,
                         basic_credits=excluded.basic_credits,

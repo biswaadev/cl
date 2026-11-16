@@ -2023,6 +2023,10 @@ def admin_update_credentials():
     final_username = new_username if new_username else admin_user["username"]
     session["username"] = final_username
     conn.close()
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
 
     return jsonify({
         "success": True,
