@@ -79,11 +79,27 @@ def init_db():
             captain TEXT,
             members TEXT DEFAULT '45/50',
             uptime TEXT DEFAULT '1m',
+            games_played INTEGER DEFAULT 0,
+            squad_json TEXT,
             started_at INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
     ''')
+
+    # Migration for groups table columns
+    c.execute("PRAGMA table_info(groups)")
+    existing_cols = [r[1] for r in c.fetchall()]
+    if "games_played" not in existing_cols:
+        try:
+            c.execute("ALTER TABLE groups ADD COLUMN games_played INTEGER DEFAULT 0")
+        except Exception:
+            pass
+    if "squad_json" not in existing_cols:
+        try:
+            c.execute("ALTER TABLE groups ADD COLUMN squad_json TEXT")
+        except Exception:
+            pass
 
     # Transactions table
     c.execute('''

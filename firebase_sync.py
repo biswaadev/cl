@@ -127,15 +127,17 @@ def import_json_to_sqlite(data):
 
         # 3. Restore Groups
         if "groups" in tables and isinstance(tables["groups"], list):
+            c.execute("DELETE FROM groups")
             for g in tables["groups"]:
                 c.execute('''
-                    INSERT OR REPLACE INTO groups (id, user_id, group_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, clan_level, captain, members, uptime, started_at, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO groups (id, user_id, group_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, clan_level, captain, members, uptime, games_played, squad_json, started_at, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     g.get("id"), g.get("user_id", 1), str(g.get("group_id")), str(g.get("clan_id")),
                     g.get("clan_name"), g.get("region", "IND"), g.get("status", "running"),
                     g.get("glory_gained", 0), g.get("clan_total_glory", 0), g.get("clan_level", 4),
                     g.get("captain", ""), g.get("members", "45/50"), g.get("uptime", "Active"),
+                    g.get("games_played", 0), g.get("squad_json"),
                     g.get("started_at"), g.get("created_at")
                 ))
 
