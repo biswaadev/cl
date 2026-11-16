@@ -92,6 +92,7 @@ def import_json_to_sqlite(data):
     try:
         # 1. Restore Users
         if "users" in tables and isinstance(tables["users"], list) and len(tables["users"]) > 0:
+            c.execute("DELETE FROM users")
             for u in tables["users"]:
                 c.execute('''
                     INSERT INTO users (id, username, password_hash, role, basic_credits, premium_credits, max_groups, is_banned, created_at)
