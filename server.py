@@ -12,6 +12,8 @@ import hmac
 import hashlib
 import threading
 import secrets
+import shutil
+import tempfile
 from collections import defaultdict
 from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, session, redirect, Response
@@ -2219,6 +2221,52 @@ def admin_save_contact():
         "whatsapp_url": format_wa_url(get_setting("contact_whatsapp", "6282326562316")),
         "telegram_url": format_tg_url(get_setting("contact_telegram", "ff_level_pro"))
     })
+
+@app.route("/api/admin/database/backup", methods=["GET"])
+def admin_download_db_backup():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+    from db import resolve_db_path
+    current_db = resolve_db_path()
+    if not os.path.exists(current_db):
+        return jsonify({"error": "Database file not found."}), 404
+    db_dir = os.path.dirname(os.path.abspath(current_db))
+    db_file = os.path.basename(current_db)
+    return send_from_directory(db_dir, db_file, as_attachment=True, download_name=f"panel_backup_{int(time.time())}.db")
+
+@app.route("/api/admin/database/restore", methods=["POST"])
+def admin_restore_db_backup():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+    if 'backup_file' not in request.files:
+        return jsonify({"error": "No backup file uploaded."}), 400
+    file = request.files['backup_file']
+    if not file or not file.filename.endswith(('.db', '.sqlite', '.sqlite3')):
+        return jsonify({"error": "Invalid file format. Please upload a .db SQLite backup."}), 400
+
+    from db import resolve_db_path
+    current_db = resolve_db_path()
+    temp_fd, temp_path = tempfile.mkstemp(suffix=".db")
+    os.close(temp_fd)
+    file.save(temp_path)
+
+    try:
+        verify_conn = sqlite3.connect(temp_path)
+        vc = verify_conn.cursor()
+        vc.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = [r[0] for r in vc.fetchall()]
+        verify_conn.close()
+        if 'users' not in tables:
+            os.remove(temp_path)
+            return jsonify({"error": "Invalid backup file: 'users' table missing."}), 400
+
+        shutil.copy2(temp_path, current_db)
+        os.remove(temp_path)
+        return jsonify({"success": True, "message": "Database restored successfully! All users, credits and settings recovered."})
+    except Exception as e:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        return jsonify({"error": f"Failed to restore database: {str(e)}"}), 500
 
 @app.route("/api/admin/settings", methods=["GET"])
 def admin_get_settings():

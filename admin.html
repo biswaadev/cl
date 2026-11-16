@@ -1498,6 +1498,54 @@
                         </div>
                     </form>
                 </div>
+
+                <!-- Database Persistence & Cloud Backup Card -->
+                <div class="ng-card p-6 border border-emerald-500/30 max-w-2xl mt-5 bg-gradient-to-br from-emerald-500/5 to-transparent">
+                    <div class="flex items-center justify-between pb-4 border-b border-gray-800 mb-5 flex-wrap gap-2">
+                        <div>
+                            <h3 class="font-['Rajdhani'] font-bold text-2xl text-white flex items-center gap-2">
+                                <span class="px-2.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-xs font-bold border border-emerald-500/40">Database Safety</span>
+                                <span>Persistent Storage &amp; Database Backup</span>
+                            </h3>
+                            <p class="text-xs text-gray-400 mt-1">Protect your users, credits, and orders from being reset on cloud restarts.</p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="p-4 rounded-xl bg-black/40 border border-white/5 space-y-2">
+                            <h4 class="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                                <span>⚠️ Stop Database Resets on Railway</span>
+                            </h4>
+                            <p class="text-xs text-gray-300 leading-relaxed">
+                                Railway containers restart during deployments. To prevent database resets permanently, attach a <strong>Volume</strong> in your Railway dashboard mounted to <code class="px-1.5 py-0.5 rounded bg-white/10 font-mono text-amber-300">/data</code>. The system automatically stores all SQLite data in <code class="px-1.5 py-0.5 rounded bg-white/10 font-mono text-amber-300">/data/panel.db</code> and preserves it forever.
+                            </p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                            <!-- Download Backup -->
+                            <div class="p-4 rounded-xl bg-black/30 border border-white/5">
+                                <h4 class="text-xs font-bold text-white mb-1">Download DB Snapshot</h4>
+                                <p class="text-[11px] text-gray-400 mb-3">Save an offline copy of your entire panel database right now.</p>
+                                <a href="/api/admin/database/backup" class="ng-btn-secondary px-4 py-2 text-xs font-bold inline-flex items-center gap-2 no-underline">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                    <span>Download .db Backup</span>
+                                </a>
+                            </div>
+
+                            <!-- Restore Backup -->
+                            <div class="p-4 rounded-xl bg-black/30 border border-white/5">
+                                <h4 class="text-xs font-bold text-white mb-1">Restore from Backup</h4>
+                                <p class="text-[11px] text-gray-400 mb-3">Upload a previously saved .db file to recover all data.</p>
+                                <form onsubmit="adminRestoreDatabase(event)" class="space-y-2">
+                                    <input type="file" id="admin-db-restore-file" accept=".db,.sqlite,.sqlite3" class="block w-full text-xs text-gray-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11px] file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20" required>
+                                    <button type="submit" id="btn-restore-db" class="ng-btn-primary px-3 py-1.5 text-xs font-bold flex items-center gap-1.5">
+                                        <span>⚡ Upload &amp; Restore</span>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Admin Section: Broadcast Alert -->
@@ -2496,6 +2544,50 @@
             if (btn) {
                 btn.disabled = false;
                 btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg> <span>🔒 Update Admin Credentials</span>`;
+            }
+        }
+    }
+
+    async function adminRestoreDatabase(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        const fileInput = document.getElementById('admin-db-restore-file');
+        const file = fileInput?.files?.[0];
+        if (!file) {
+            showToast('Please select a .db backup file first!', 'error');
+            return;
+        }
+
+        if (!confirm('Are you sure you want to restore this database? Current data will be replaced by the backup.')) {
+            return;
+        }
+
+        const btn = document.getElementById('btn-restore-db');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Restoring...';
+        }
+
+        const formData = new FormData();
+        formData.append('backup_file', file);
+
+        try {
+            const res = await fetch('/api/admin/database/restore', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showToast(data.message || 'Database restored successfully!', 'success');
+                setTimeout(() => window.location.reload(), 1500);
+            } else {
+                showToast(data.error || 'Failed to restore database', 'error');
+            }
+        } catch(err) {
+            showToast('Network error while restoring database', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = '⚡ Upload & Restore';
             }
         }
     }

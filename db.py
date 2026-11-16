@@ -2,11 +2,48 @@ import sqlite3
 import os
 import hashlib
 import time
+import shutil
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "panel.db")
+LOCAL_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "panel.db")
+
+def resolve_db_path():
+    # 1. Custom env var if set by user or host
+    custom_path = os.environ.get("DATABASE_PATH")
+    if custom_path:
+        os.makedirs(os.path.dirname(os.path.abspath(custom_path)), exist_ok=True)
+        return custom_path
+
+    # 2. Railway volume mount path from env
+    railway_vol = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH")
+    if railway_vol and os.path.isdir(railway_vol):
+        vol_db = os.path.join(railway_vol, "panel.db")
+        if not os.path.exists(vol_db) and os.path.exists(LOCAL_DB_PATH):
+            try:
+                shutil.copy2(LOCAL_DB_PATH, vol_db)
+                print(f"[DB] Initialized persistent database in Railway Volume: {vol_db}")
+            except Exception as e:
+                print(f"[DB] Error copying to Railway Volume: {e}")
+        return vol_db
+
+    # 3. Standard persistent /data volume (Railway / Docker mount)
+    if os.path.isdir("/data"):
+        data_db = "/data/panel.db"
+        if not os.path.exists(data_db) and os.path.exists(LOCAL_DB_PATH):
+            try:
+                shutil.copy2(LOCAL_DB_PATH, data_db)
+                print(f"[DB] Initialized persistent database in /data: {data_db}")
+            except Exception as e:
+                print(f"[DB] Error copying to /data: {e}")
+        return data_db
+
+    # 4. Fallback to local file in project directory
+    return LOCAL_DB_PATH
+
+DB_PATH = resolve_db_path()
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    current_path = resolve_db_path()
+    conn = sqlite3.connect(current_path, timeout=30.0)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA busy_timeout=30000;")
     conn.row_factory = sqlite3.Row
@@ -17,6 +54,8 @@ def hash_password(password):
     return hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
 
 def init_db():
+    current_path = resolve_db_path()
+    os.makedirs(os.path.dirname(os.path.abspath(current_path)), exist_ok=True)
     conn = get_db()
     c = conn.cursor()
 
