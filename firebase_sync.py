@@ -38,7 +38,7 @@ def get_secret():
             return str(row["value"]).strip()
     except Exception:
         pass
-    return "jRD9dMfKsio67rKV6QCSxWQZJHqYKbt7IKDTu4Sk"
+    return ""
 
 def get_firebase_url(path="ffglory"):
     clean_path = path.strip("/ ")
