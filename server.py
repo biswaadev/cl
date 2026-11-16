@@ -14,6 +14,8 @@ import threading
 import secrets
 import shutil
 import tempfile
+import gzip
+import io
 from collections import defaultdict
 from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, session, redirect, Response
@@ -31,22 +33,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 _db_ready = False
 _db_init_lock = threading.Lock()
-_last_firebase_fetch = 0
-_fetch_lock = threading.Lock()
-
-def fetch_from_firebase_realtime(force=False, min_interval=0.8):
-    """Fetches complete live state directly from Firebase Realtime Database for actions."""
-    global _last_firebase_fetch
-    now = time.time()
-    if force or (now - _last_firebase_fetch >= min_interval):
-        with _fetch_lock:
-            now = time.time()
-            if force or (now - _last_firebase_fetch >= min_interval):
-                try:
-                    sync_pull_from_firebase()
-                    _last_firebase_fetch = time.time()
-                except Exception as e:
-                    print(f"[Firebase Fetch Error]: {e}")
 
 def ensure_db_ready():
     global _db_ready
@@ -85,9 +71,35 @@ def security_firewall_check():
 
     ensure_db_ready()
 
-    # Fetch live state from Firebase Realtime Database on actions (excluding static assets)
-    if not req_path.endswith(('.css', '.png', '.jpg', '.jpeg', '.svg', '.ico', '.webp')):
-        fetch_from_firebase_realtime()
+@app.after_request
+def optimize_and_compress(response):
+    # Static asset caching
+    req_path = request.path or ''
+    if req_path.endswith(('.css', '.png', '.jpg', '.jpeg', '.svg', '.ico', '.webp')):
+        response.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=604800"
+
+    # Fast Gzip compression for HTML, JSON, CSS, JS
+    accept_encoding = request.headers.get('Accept-Encoding', '')
+    if ('gzip' in accept_encoding and
+        response.status_code == 200 and
+        response.content_length and
+        response.content_length > 1024 and
+        response.mimetype in ('text/html', 'text/css', 'application/javascript', 'application/json')):
+
+        if response.headers.get('Content-Encoding') is None:
+            try:
+                raw_data = response.get_data()
+                gzip_buf = io.BytesIO()
+                with gzip.GzipFile(mode='wb', fileobj=gzip_buf, compresslevel=6) as gz:
+                    gz.write(raw_data)
+                compressed = gzip_buf.getvalue()
+                if len(compressed) < len(raw_data):
+                    response.set_data(compressed)
+                    response.headers['Content-Encoding'] = 'gzip'
+                    response.headers['Content-Length'] = len(compressed)
+            except Exception:
+                pass
+    return response
 
 UPSTREAM_BASE = "https://ffglory.pro"
 
