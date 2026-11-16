@@ -22,8 +22,8 @@ app.secret_key = 'ffglory_prod_secret_84b879661bf49d33'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Security Guard: Block public downloads of database, server code, configs & sensitive files
-FORBIDDEN_EXTENSIONS = ('.db', '.sqlite', '.sqlite3', '.sql', '.py', '.json', '.bak', '.log', '.sh', '.env', '.zip', '.tar', '.gz')
-FORBIDDEN_EXACT_PATHS = {'/panel.db', '/state.json', '/server.py', '/db.py', '/requirements.txt', '/procfile', '/ffglory_backup.zip'}
+FORBIDDEN_EXTENSIONS = ('.db', '.sqlite', '.sqlite3', '.sql', '.py', '.json', '.js', '.bak', '.log', '.sh', '.env', '.zip', '.tar', '.gz')
+FORBIDDEN_EXACT_PATHS = {'/panel.db', '/state.json', '/server.py', '/db.py', '/requirements.txt', '/procfile', '/ffglory_backup.zip', '/login.js', '/shared.js'}
 
 @app.before_request
 def security_firewall_check():
@@ -769,12 +769,9 @@ def serve_css():
     return send_from_directory(BASE_DIR, "shared.css", mimetype="text/css")
 
 @app.route("/shared.js")
-def serve_shared_js():
-    return send_from_directory(BASE_DIR, "shared.js", mimetype="application/javascript")
-
 @app.route("/login.js")
-def serve_login_js():
-    return send_from_directory(BASE_DIR, "login.js", mimetype="application/javascript")
+def block_js_direct_access():
+    return jsonify({"error": "Not found"}), 404
 
 @app.route("/favicon.ico")
 def serve_favicon():
