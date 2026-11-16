@@ -17,9 +17,26 @@ from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, session, redirect, Response
 from db import get_db, hash_password, init_db
 
-app = Flask(__name__, static_folder='.', static_url_path='')
+app = Flask(__name__, static_folder=None)
 app.secret_key = 'ffglory_prod_secret_84b879661bf49d33'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Security Guard: Block public downloads of database, server code, configs & sensitive files
+FORBIDDEN_EXTENSIONS = ('.db', '.sqlite', '.sqlite3', '.sql', '.py', '.json', '.bak', '.log', '.sh', '.env', '.zip', '.tar', '.gz')
+FORBIDDEN_EXACT_PATHS = {'/panel.db', '/state.json', '/server.py', '/db.py', '/requirements.txt', '/procfile', '/ffglory_backup.zip'}
+
+@app.before_request
+def security_firewall_check():
+    req_path = (request.path or '').lower().rstrip('/')
+    if not req_path:
+        return None
+    # Block forbidden exact paths
+    if req_path in FORBIDDEN_EXACT_PATHS:
+        return jsonify({"error": "Not found"}), 404
+    # Block sensitive extensions outside api endpoints
+    if not req_path.startswith('/api/'):
+        if req_path.endswith(FORBIDDEN_EXTENSIONS):
+            return jsonify({"error": "Not found"}), 404
 
 UPSTREAM_BASE = "https://ffglory.pro"
 
@@ -804,13 +821,22 @@ def serve_sitemap():
 </urlset>"""
     return Response(xml_content, mimetype="application/xml")
 
-# Block public zip and source downloads
+# Block public database, zip and source downloads
+@app.route("/panel.db")
+@app.route("/state.json")
+@app.route("/server.py")
+@app.route("/db.py")
 @app.route("/download")
 @app.route("/download.zip")
 @app.route("/download/project.zip")
 @app.route("/ffglory_backup.zip")
 @app.route("/<path:path>.zip")
-def block_zip_downloads(path=None):
+@app.route("/<path:path>.db")
+@app.route("/<path:path>.sqlite")
+@app.route("/<path:path>.sqlite3")
+@app.route("/<path:path>.sql")
+@app.route("/<path:path>.bak")
+def block_sensitive_downloads(path=None):
     return jsonify({"error": "Not found"}), 404
 
 # ==================== AUTHENTICATION (SQLITE) ====================
