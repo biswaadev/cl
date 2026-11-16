@@ -182,6 +182,112 @@ def call_upstream(method, path, json_data=None, params=None):
     except Exception as e:
         return 500, {"error": f"Upstream connection failed: {str(e)}"}
 
+# ==================== SERVER & REGION MAINTENANCE MANAGEMENT ====================
+
+REGION_FLAGS = {
+    'bd': '🇧🇩',
+    'pk': '🇵🇰',
+    'in': '🇮🇳',
+    'indo': '🇮🇩',
+    'ind': '🇮🇩',
+    'id': '🇮🇩',
+    'sg': '🇸🇬',
+    'th': '🇹🇭',
+    'vn': '🇻🇳',
+    'me': '🇸🇦',
+    'ghrab': '🇦🇪',
+    'eu': '🇪🇺',
+    'na': '🇺🇸',
+    'us': '🇺🇸',
+    'br': '🇧🇷',
+    'ru': '🇷🇺',
+    'sac': '🌎',
+    'sa': '🇸🇦',
+    'ae': '🇦🇪'
+}
+
+DEFAULT_REGIONS = [
+    {'id': 'in', 'region_name': 'India', 'region_code': 'IN', 'tier': 'basic', 'enabled': True},
+    {'id': 'bd', 'region_name': 'Bangladesh', 'region_code': 'BD', 'tier': 'basic', 'enabled': True},
+    {'id': 'pk', 'region_name': 'Pakistan', 'region_code': 'PK', 'tier': 'basic', 'enabled': True},
+    {'id': 'sg', 'region_name': 'Singapore', 'region_code': 'SG', 'tier': 'basic', 'enabled': True},
+    {'id': 'indo', 'region_name': 'Indonesia', 'region_code': 'IND', 'tier': 'basic', 'enabled': True},
+    {'id': 'th', 'region_name': 'Thailand', 'region_code': 'TH', 'tier': 'basic', 'enabled': True},
+    {'id': 'vn', 'region_name': 'Vietname', 'region_code': 'VN', 'tier': 'basic', 'enabled': True},
+    {'id': 'me', 'region_name': 'Middle East', 'region_code': 'ME', 'tier': 'basic', 'enabled': True},
+    {'id': 'na', 'region_name': 'North America', 'region_code': 'NA', 'tier': 'basic', 'enabled': True},
+    {'id': 'us', 'region_name': 'United States (US)', 'region_code': 'US', 'tier': 'basic', 'enabled': True},
+    {'id': 'br', 'region_name': 'Brasil', 'region_code': 'BR', 'tier': 'basic', 'enabled': True},
+    {'id': 'eu', 'region_name': 'Europe', 'region_code': 'EU', 'tier': 'basic', 'enabled': True},
+    {'id': 'ru', 'region_name': 'Russia', 'region_code': 'RU', 'tier': 'basic', 'enabled': True},
+    {'id': 'sac', 'region_name': 'South America (SAC)', 'region_code': 'SAC', 'tier': 'basic', 'enabled': True},
+    {'id': 'ghrab', 'region_name': 'Middle East (Ghrab)', 'region_code': 'ME', 'tier': 'premium', 'enabled': False}
+]
+
+def get_server_overrides():
+    raw = get_setting("server_maintenance_overrides", "{}")
+    try:
+        val = json.loads(raw)
+        return val if isinstance(val, dict) else {}
+    except Exception:
+        return {}
+
+def save_server_overrides(overrides):
+    set_setting("server_maintenance_overrides", json.dumps(overrides))
+
+def is_global_maintenance():
+    return get_setting("global_maintenance_mode", "0") == "1"
+
+def get_processed_regions():
+    upstream_status, upstream_data = call_upstream("GET", "/api/pricing")
+    raw_regions = []
+    if upstream_status == 200 and isinstance(upstream_data, dict):
+        raw_regions = upstream_data.get("regions", [])
+    if not raw_regions:
+        raw_regions = [dict(r) for r in DEFAULT_REGIONS]
+    else:
+        raw_regions = [dict(r) for r in raw_regions]
+
+    overrides = get_server_overrides()
+    global_maint = is_global_maintenance()
+    global_msg = get_setting("global_maintenance_message", "All server nodes are currently undergoing scheduled maintenance.")
+
+    processed = []
+    for reg in raw_regions:
+        r = dict(reg)
+        rid = (r.get("id") or "").lower()
+        rcode = (r.get("region_code") or "").lower()
+        upstream_enabled = bool(r.get("enabled", True))
+        r["upstream_enabled"] = upstream_enabled
+        r["flag"] = REGION_FLAGS.get(rid) or REGION_FLAGS.get(rcode) or "🌐"
+
+        override_val = None
+        if rid in overrides:
+            override_val = overrides[rid]
+        elif rcode in overrides:
+            override_val = overrides[rcode]
+
+        r["override"] = override_val
+
+        if global_maint:
+            r["enabled"] = False
+            r["maintenance_reason"] = global_msg
+            r["status_label"] = "Global Maint"
+        elif override_val is False:
+            r["enabled"] = False
+            r["maintenance_reason"] = "Server is temporarily under maintenance by administrator."
+            r["status_label"] = "Admin Maint"
+        elif override_val is True:
+            r["enabled"] = True
+            r["status_label"] = "Admin Online"
+        else:
+            r["enabled"] = upstream_enabled
+            r["status_label"] = "Online" if upstream_enabled else "Upstream Maint"
+
+        processed.append(r)
+
+    return processed
+
 # ==================== STATIC PAGE ROUTES ====================
 
 def parse_runtime_minutes(created_at_val, uptime_val):
@@ -474,10 +580,7 @@ def get_user_dashboard_state(user_id):
     price_inr = float(get_setting("famgateway_price_inr", get_setting("credit_price_inr", "120.0")))
     price_usd = float(get_setting("credit_price_usd", "1.50"))
 
-    upstream_status, upstream_data = call_upstream("GET", "/api/pricing")
-    regions = []
-    if upstream_status == 200 and isinstance(upstream_data, dict):
-        regions = upstream_data.get("regions", [])
+    regions = get_processed_regions()
 
     upstream_credits = 0
     up_status, up_me = call_upstream("GET", "/api/auth/me")
@@ -489,7 +592,8 @@ def get_user_dashboard_state(user_id):
         "credit_price_usd": price_usd,
         "regions": regions,
         "upstream_credits": upstream_credits,
-        "upstream_in_stock": upstream_credits > 0
+        "upstream_in_stock": upstream_credits > 0,
+        "global_maintenance": is_global_maintenance()
     }
 
     alerts = {
@@ -578,7 +682,10 @@ def get_admin_dashboard_state():
             "title": get_setting("broadcast_title", "Glory Boost Active"),
             "message": get_setting("broadcast_message", "All server nodes are functioning normally across all regions."),
             "active": get_setting("broadcast_active", "1") == "1"
-        }
+        },
+        "servers": get_processed_regions(),
+        "global_maintenance": is_global_maintenance(),
+        "global_maintenance_message": get_setting("global_maintenance_message", "All server nodes are currently undergoing scheduled maintenance.")
     }
 
 @app.route("/")
@@ -841,11 +948,7 @@ def auth_logout():
 @app.route("/api/pricing", methods=["GET"])
 @rate_limit(max_requests=60, window_seconds=60, key_prefix="pricing")
 def get_pricing():
-    upstream_status, upstream_data = call_upstream("GET", "/api/pricing")
-    regions = []
-    if upstream_status == 200 and isinstance(upstream_data, dict):
-        regions = upstream_data.get("regions", [])
-
+    regions = get_processed_regions()
     price_inr = float(get_setting("famgateway_price_inr", get_setting("credit_price_inr", "120.0")))
 
     upstream_credits = 0
@@ -858,7 +961,8 @@ def get_pricing():
         "credit_price_usd": float(get_setting("credit_price_usd", "1.50")),
         "regions": regions,
         "upstream_credits": upstream_credits,
-        "upstream_in_stock": upstream_credits > 0
+        "upstream_in_stock": upstream_credits > 0,
+        "global_maintenance": is_global_maintenance()
     })
 
 # ==================== BOT GROUPS (RESELLER UPSTREAM AUTOMATION) ====================
@@ -885,6 +989,13 @@ def launch_clan_group():
 
     if not clan_id:
         return jsonify({"error": "Clan ID is required."}), 400
+
+    # Verify server region is online and not under maintenance
+    all_regions = get_processed_regions()
+    matched_region = next((r for r in all_regions if (r.get("id") or "").lower() == region or (r.get("region_code") or "").lower() == region), None)
+    if matched_region and not matched_region.get("enabled", True):
+        reason = matched_region.get("maintenance_reason") or f"Server region {matched_region.get('region_name', region.upper())} is currently under maintenance."
+        return jsonify({"error": reason}), 400
 
     conn = get_db()
     c = conn.cursor()
@@ -2318,6 +2429,96 @@ def admin_broadcast():
     set_setting("broadcast_message", data.get("message", ""))
 
     return jsonify({"success": True, "message": "Broadcast alert saved and active."})
+
+# ==================== ADMIN SERVER & REGION MANAGEMENT ENDPOINTS ====================
+
+@app.route("/api/admin/servers", methods=["GET"])
+def admin_get_servers():
+    if not require_admin():
+        return jsonify({"error": "Admin access required."}), 403
+
+    servers = get_processed_regions()
+    return jsonify({
+        "success": True,
+        "global_maintenance": is_global_maintenance(),
+        "global_message": get_setting("global_maintenance_message", "All server nodes are currently undergoing scheduled maintenance."),
+        "overrides": get_server_overrides(),
+        "servers": servers
+    })
+
+@app.route("/api/admin/servers/toggle", methods=["POST"])
+def admin_toggle_server():
+    if not require_admin():
+        return jsonify({"error": "Admin access required."}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    region_id = (data.get("region_id") or "").strip().lower()
+    target_status = (data.get("status") or "").strip().lower()
+
+    if not region_id:
+        return jsonify({"error": "Region ID is required."}), 400
+
+    overrides = get_server_overrides()
+    if target_status == "maintenance":
+        overrides[region_id] = False
+    elif target_status == "online":
+        overrides[region_id] = True
+    elif target_status in ("default", "reset"):
+        overrides.pop(region_id, None)
+    else:
+        return jsonify({"error": "Invalid status. Use 'maintenance', 'online', or 'default'."}), 400
+
+    save_server_overrides(overrides)
+    servers = get_processed_regions()
+
+    return jsonify({
+        "success": True,
+        "message": f"Server '{region_id.upper()}' status set to {target_status.upper()}.",
+        "servers": servers,
+        "overrides": overrides
+    })
+
+@app.route("/api/admin/servers/global", methods=["POST"])
+def admin_set_global_maintenance():
+    if not require_admin():
+        return jsonify({"error": "Admin access required."}), 403
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    enabled = data.get("enabled")
+    if isinstance(enabled, str):
+        enabled = enabled.lower() in ("1", "true", "yes", "on")
+    else:
+        enabled = bool(enabled)
+
+    message = (data.get("message") or "").strip()
+    set_setting("global_maintenance_mode", "1" if enabled else "0")
+    if message:
+        set_setting("global_maintenance_message", message)
+
+    servers = get_processed_regions()
+    return jsonify({
+        "success": True,
+        "message": f"Global maintenance mode is now {'ENABLED' if enabled else 'DISABLED'}.",
+        "global_maintenance": enabled,
+        "global_message": get_setting("global_maintenance_message", ""),
+        "servers": servers
+    })
+
+@app.route("/api/admin/servers/reset-all", methods=["POST"])
+def admin_reset_all_servers():
+    if not require_admin():
+        return jsonify({"error": "Admin access required."}), 403
+
+    save_server_overrides({})
+    set_setting("global_maintenance_mode", "0")
+    servers = get_processed_regions()
+    return jsonify({
+        "success": True,
+        "message": "All server overrides reset to upstream live status.",
+        "servers": servers,
+        "overrides": {},
+        "global_maintenance": False
+    })
 
 
 # ==================== CUSTOM PAYMENT GATEWAY WEBHOOK & TESTER ====================
