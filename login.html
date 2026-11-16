@@ -96,6 +96,22 @@
     <meta property="og:image" content="/assets/ffglory-logo-96.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="shared.css?v=bc2e8cea78">
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-analytics.js";
+        const firebaseConfig = {
+            apiKey: "AIzaSyACkeWBLaGr3eX4WztYpqpfyUbvEzVEfE4",
+            authDomain: "java-d72c4.firebaseapp.com",
+            databaseURL: "https://java-d72c4-default-rtdb.firebaseio.com",
+            projectId: "java-d72c4",
+            storageBucket: "java-d72c4.firebasestorage.app",
+            messagingSenderId: "751951259910",
+            appId: "1:751951259910:web:1a8ffe3552955b45d31687",
+            measurementId: "G-VZM1LD0XW6"
+        };
+        const app = initializeApp(firebaseConfig);
+        try { getAnalytics(app); } catch(e) {}
+    </script>
 </head>
 <body class="min-h-screen flex flex-col">
 

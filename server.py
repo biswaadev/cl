@@ -18,6 +18,12 @@ from collections import defaultdict
 from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, session, redirect, Response
 from db import get_db, hash_password, init_db
+from firebase_sync import (
+    sync_pull_from_firebase,
+    sync_push_to_firebase,
+    trigger_async_sync,
+    start_periodic_sync
+)
 
 app = Flask(__name__, static_folder=None)
 app.secret_key = 'ffglory_prod_secret_84b879661bf49d33'
@@ -148,6 +154,14 @@ def set_setting(key, value):
     c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
     conn.commit()
     conn.close()
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
 
 UPSTREAM_PLATFORM_KEY = "22e15fc938aef0cf08bff1a4dd7a4aaa"
 
@@ -869,6 +883,10 @@ def auth_signup():
     user_id = c.lastrowid
     conn.commit()
     conn.close()
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
 
     session["user_id"] = user_id
     session["username"] = username
@@ -1340,6 +1358,10 @@ def client_famgateway_create_order():
     """, (tx_id, user_id, username, credits, total_inr, order_id))
     conn.commit()
     conn.close()
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
 
     return jsonify({
         "success": True,
@@ -1663,6 +1685,10 @@ def client_create_coupon():
     """, (coupon_id, code, amount, uname))
     conn.commit()
     conn.close()
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
 
     return jsonify({
         "success": True,
@@ -1897,6 +1923,10 @@ def admin_toggle_ban():
     c.execute("UPDATE users SET is_banned = ? WHERE id = ?", (new_status, user_id))
     conn.commit()
     conn.close()
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
 
     status_txt = "suspended (banned)" if new_status else "active (unbanned)"
     return jsonify({"success": True, "is_banned": new_status, "message": f"User '{user['username']}' is now {status_txt}."})
@@ -1921,6 +1951,10 @@ def admin_reset_password():
     c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (pw_hash, user_id))
     conn.commit()
     conn.close()
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
 
     return jsonify({"success": True, "message": "User password has been successfully reset!"})
 
@@ -2023,6 +2057,10 @@ def admin_toggle_role():
     c.execute("UPDATE users SET role = ? WHERE id = ?", (target_role, user_id))
     conn.commit()
     conn.close()
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
 
     return jsonify({"success": True, "message": f"User '{user['username']}' role changed to {target_role.upper()}."})
 
@@ -2063,6 +2101,10 @@ def admin_delete_user():
     c.execute("DELETE FROM users WHERE id = ?", (target_id,))
     conn.commit()
     conn.close()
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
 
     return jsonify({"success": True, "message": f"User '{target_username}' and all associated records deleted permanently."})
 
@@ -2152,6 +2194,10 @@ def admin_approve_order():
     c.execute("UPDATE users SET basic_credits = basic_credits + ? WHERE id = ?", (tx["amount"], tx["user_id"]))
     conn.commit()
     conn.close()
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
 
     return jsonify({"success": True, "message": f"Order {tx_id} approved! +{tx['amount']} credits delivered to customer {tx['username']}."})
 
@@ -2168,6 +2214,10 @@ def admin_reject_order():
     c.execute("UPDATE transactions SET status = 'rejected' WHERE id = ?", (tx_id,))
     conn.commit()
     conn.close()
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
 
     return jsonify({"success": True, "message": f"Order {tx_id} rejected."})
 
@@ -2268,6 +2318,34 @@ def admin_restore_db_backup():
             os.remove(temp_path)
         return jsonify({"error": f"Failed to restore database: {str(e)}"}), 500
 
+@app.route("/api/admin/firebase/status", methods=["GET"])
+def admin_firebase_status():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+    import firebase_sync
+    return jsonify({
+        "firebase_url": firebase_sync.FIREBASE_DB_URL,
+        "has_secret": bool(firebase_sync.get_secret()),
+        "last_sync_time": firebase_sync._last_sync_time,
+        "last_sync_formatted": time.ctime(firebase_sync._last_sync_time) if firebase_sync._last_sync_time else "Never",
+        "status": firebase_sync._last_sync_status,
+        "error": firebase_sync._last_sync_error
+    })
+
+@app.route("/api/admin/firebase/sync", methods=["POST"])
+def admin_firebase_sync():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+    import firebase_sync
+    data = request.get_json(silent=True) or {}
+    action = data.get("action", "push")
+    if action == "pull":
+        success = firebase_sync.sync_pull_from_firebase()
+        return jsonify({"success": success, "message": "Pulled latest cloud snapshot from Firebase!" if success else "Failed to pull from Firebase."})
+    else:
+        success, msg = firebase_sync.sync_push_to_firebase()
+        return jsonify({"success": success, "message": msg})
+
 @app.route("/api/admin/settings", methods=["GET"])
 def admin_get_settings():
     if not require_admin():
@@ -2279,7 +2357,7 @@ def admin_get_settings():
         "reseller_usdt_network", "auto_credit_mode", "upstream_api_key",
         "upstream_master_key", "broadcast_active", "broadcast_title", "broadcast_message",
         "custom_payment_api_url", "custom_payment_api_key", "custom_payment_webhook_secret",
-        "custom_gateway_mode", "contact_whatsapp", "contact_telegram"
+        "custom_gateway_mode", "contact_whatsapp", "contact_telegram", "firebase_db_secret"
     ]
     res = {}
     for k in keys:
@@ -2305,7 +2383,7 @@ def admin_save_settings():
         "reseller_usdt_network", "auto_credit_mode", "upstream_api_key",
         "upstream_master_key", "custom_payment_api_url", "custom_payment_api_key",
         "custom_payment_webhook_secret", "custom_gateway_mode",
-        "contact_whatsapp", "contact_telegram"
+        "contact_whatsapp", "contact_telegram", "firebase_db_secret"
     ]
     for f in fields:
         if f in data:
@@ -2345,6 +2423,10 @@ def admin_transactions_clear():
     deleted_count = c.rowcount
     conn.commit()
     conn.close()
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
     return jsonify({
         "success": True,
         "message": f"Successfully cleared all {deleted_count} top-up records from history."
@@ -3394,6 +3476,11 @@ def stealth_gateway():
 
 if __name__ == "__main__":
     init_db()
+    try:
+        sync_pull_from_firebase()
+        start_periodic_sync(interval=60)
+    except Exception as e:
+        print(f"[Firebase Sync Warning]: {e}")
     port = int(os.environ.get("PORT", 8080))
     print(f"Starting FFGlory Reseller Web Production Server on 0.0.0.0:{port}...")
     app.run(host="0.0.0.0", port=port, debug=False)

@@ -1546,6 +1546,64 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Firebase Realtime Database Cloud Sync Card -->
+                <div class="ng-card p-6 border border-sky-500/30 max-w-2xl mt-5 bg-gradient-to-br from-sky-500/5 to-transparent">
+                    <div class="flex items-center justify-between pb-4 border-b border-gray-800 mb-5 flex-wrap gap-2">
+                        <div>
+                            <h3 class="font-['Rajdhani'] font-bold text-2xl text-white flex items-center gap-2">
+                                <span class="px-2.5 py-0.5 rounded bg-sky-500/20 text-sky-300 text-xs font-bold border border-sky-500/40">Firebase Cloud</span>
+                                <span>Realtime Database Automatic Sync</span>
+                            </h3>
+                            <p class="text-xs text-gray-400 mt-1">Realtime cloud synchronization ensuring 0% data loss across container restarts.</p>
+                        </div>
+                        <div id="firebase-sync-status-badge" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-gray-800 text-gray-400 border border-gray-700">
+                            Checking...
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="p-3.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-gray-400">Firebase RTDB:</span>
+                                <span class="font-mono text-sky-400 text-[11px] truncate">https://java-d72c4-default-rtdb.firebaseio.com</span>
+                            </div>
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-gray-400">Last Synced:</span>
+                                <span id="firebase-last-sync-text" class="text-gray-200 text-[11px]">Loading...</span>
+                            </div>
+                        </div>
+
+                        <!-- Firebase Secret Form -->
+                        <div class="p-4 rounded-xl bg-black/30 border border-white/5 space-y-3">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-300 mb-1">
+                                    Firebase Database Secret (Optional / For Protected DB)
+                                </label>
+                                <p class="text-[11px] text-gray-400 mb-2">
+                                    If your Firebase Realtime DB rules are locked, enter your Database Secret here (Firebase Console &rarr; Project Settings &rarr; Service Accounts &rarr; Database Secrets).
+                                </p>
+                                <div class="flex gap-2">
+                                    <input type="password" id="admin-firebase-secret" placeholder="Enter Firebase Database Secret..." class="ng-input text-xs flex-1">
+                                    <button onclick="adminSaveFirebaseSecret()" id="btn-save-firebase-secret" class="ng-btn-secondary px-3 py-1.5 text-xs font-bold whitespace-nowrap">
+                                        Save Secret
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-800/80">
+                                <button onclick="adminTriggerFirebaseSync('push')" id="btn-sync-firebase-push" class="ng-btn-primary px-4 py-2 text-xs font-bold flex items-center gap-1.5">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                                    <span>Sync to Cloud Now</span>
+                                </button>
+                                <button onclick="adminTriggerFirebaseSync('pull')" id="btn-sync-firebase-pull" class="ng-btn-secondary px-4 py-2 text-xs font-bold flex items-center gap-1.5">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/></svg>
+                                    <span>Restore from Cloud</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Admin Section: Broadcast Alert -->
@@ -2323,6 +2381,9 @@
                     if (uInput) uInput.placeholder = `Current: ${meData.username} (type new to change)`;
                 }
             } catch(e) {}
+
+            // Load Firebase Status
+            adminLoadFirebaseStatus();
         } catch(e) {}
     }
 
@@ -2588,6 +2649,97 @@
             if (btn) {
                 btn.disabled = false;
                 btn.textContent = '⚡ Upload & Restore';
+            }
+        }
+    }
+
+    async function adminLoadFirebaseStatus() {
+        try {
+            const res = await fetch('/api/admin/firebase/status');
+            const data = await res.json();
+            const badge = document.getElementById('firebase-sync-status-badge');
+            const lastText = document.getElementById('firebase-last-sync-text');
+            if (badge) {
+                if (data.status === 'Success') {
+                    badge.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+                    badge.textContent = '● Cloud Sync Active';
+                } else if (data.status === 'Failed' || data.status === 'Error') {
+                    badge.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40';
+                    badge.textContent = '⚠️ Secret / Rules Needed';
+                } else {
+                    badge.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-gray-800 text-gray-400 border border-gray-700';
+                    badge.textContent = 'Ready';
+                }
+            }
+            if (lastText) {
+                lastText.textContent = data.last_sync_formatted || 'Never';
+            }
+        } catch(e) {
+            console.error('Error fetching firebase status:', e);
+        }
+    }
+
+    async function adminSaveFirebaseSecret() {
+        const secret = document.getElementById('admin-firebase-secret')?.value?.trim();
+        const btn = document.getElementById('btn-save-firebase-secret');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+        }
+        try {
+            const res = await fetch('/api/admin/save-settings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ firebase_db_secret: secret })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showToast('Firebase Database Secret saved successfully!', 'success');
+                await adminTriggerFirebaseSync('push');
+            } else {
+                showToast(data.error || 'Failed to save secret', 'error');
+            }
+        } catch(err) {
+            showToast('Network error while saving secret', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Save Secret';
+            }
+        }
+    }
+
+    async function adminTriggerFirebaseSync(action) {
+        const isPull = action === 'pull';
+        const btn = isPull ? document.getElementById('btn-sync-firebase-pull') : document.getElementById('btn-sync-firebase-push');
+        const originalHtml = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = isPull ? 'Pulling from Cloud...' : 'Syncing to Cloud...';
+        }
+        try {
+            const res = await fetch('/api/admin/firebase/sync', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ action: action })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showToast(data.message || 'Firebase synced successfully!', 'success');
+                await adminLoadFirebaseStatus();
+                if (isPull) {
+                    setTimeout(() => window.location.reload(), 1500);
+                }
+            } else {
+                showToast(data.message || data.error || 'Sync failed. Please check Firebase rules or Database Secret.', 'error');
+                await adminLoadFirebaseStatus();
+            }
+        } catch(err) {
+            showToast('Network error during sync', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
             }
         }
     }
