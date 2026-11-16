@@ -15,13 +15,27 @@ def resolve_db_path():
 
 DB_PATH = resolve_db_path()
 
+_in_init = False
+
 def get_db():
+    global _in_init
     current_path = resolve_db_path()
     os.makedirs(os.path.dirname(os.path.abspath(current_path)), exist_ok=True)
     conn = sqlite3.connect(current_path, timeout=30.0)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA busy_timeout=30000;")
     conn.row_factory = sqlite3.Row
+    if not _in_init:
+        try:
+            c = conn.cursor()
+            c.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='users'")
+            row = c.fetchone()
+            if not row or row[0] == 0:
+                _in_init = True
+                init_db()
+                _in_init = False
+        except Exception:
+            _in_init = False
     return conn
 
 def hash_password(password):

@@ -29,12 +29,34 @@ app = Flask(__name__, static_folder=None)
 app.secret_key = 'ffglory_prod_secret_84b879661bf49d33'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+_db_ready = False
+_db_init_lock = threading.Lock()
+
+def ensure_db_ready():
+    global _db_ready
+    if not _db_ready:
+        with _db_init_lock:
+            if not _db_ready:
+                try:
+                    init_db()
+                    sync_pull_from_firebase()
+                    start_periodic_sync(interval=60)
+                except Exception as e:
+                    print(f"[Init Warning]: {e}")
+                _db_ready = True
+
+try:
+    ensure_db_ready()
+except Exception as e:
+    print(f"[Startup Warning]: {e}")
+
 # Security Guard: Block public downloads of database, server code, configs & sensitive files
 FORBIDDEN_EXTENSIONS = ('.db', '.sqlite', '.sqlite3', '.sql', '.py', '.json', '.js', '.bak', '.log', '.sh', '.env', '.zip', '.tar', '.gz')
 FORBIDDEN_EXACT_PATHS = {'/panel.db', '/state.json', '/server.py', '/db.py', '/requirements.txt', '/procfile', '/ffglory_backup.zip', '/login.js', '/shared.js'}
 
 @app.before_request
 def security_firewall_check():
+    ensure_db_ready()
     req_path = (request.path or '').lower().rstrip('/')
     if not req_path:
         return None
@@ -99,6 +121,7 @@ class RateLimiter:
             del self.requests[k]
 
 limiter = RateLimiter()
+_launch_locks = defaultdict(threading.Lock)
 
 def rate_limit(max_requests=60, window_seconds=60, key_prefix="global", per_user=False):
     def decorator(f):
@@ -1026,93 +1049,116 @@ def launch_clan_group():
     if not user_id:
         return jsonify({"error": "Authentication required. Please log in."}), 401
 
-    payload = request.get_json(silent=True) or request.form.to_dict()
-    clan_id = (payload.get("clan_id") or "").strip()
-    region = (payload.get("region") or "na").strip().lower()
+    # Rate limiting: 1 bot launch per 3 seconds per user to prevent rapid button spam
+    ok_launch, wait_launch = limiter.is_allowed(f"act_launch_bot:{user_id}", 1, 3)
+    if not ok_launch:
+        return jsonify({"error": f"Bot launch in progress. Please wait {wait_launch}s before launching another bot."}), 429
 
-    if not clan_id:
-        return jsonify({"error": "Clan ID is required."}), 400
+    user_lock = _launch_locks[user_id]
+    if not user_lock.acquire(blocking=False):
+        return jsonify({"error": "A bot launch is already in progress for your account. Please wait a moment."}), 429
 
-    # Verify server region is online and not under maintenance
-    all_regions = get_processed_regions()
-    matched_region = next((r for r in all_regions if (r.get("id") or "").lower() == region or (r.get("region_code") or "").lower() == region), None)
-    if matched_region and not matched_region.get("enabled", True):
-        reason = matched_region.get("maintenance_reason") or f"Server region {matched_region.get('region_name', region.upper())} is currently under maintenance."
-        return jsonify({"error": reason}), 400
+    try:
+        payload = request.get_json(silent=True) or request.form.to_dict()
+        clan_id = (payload.get("clan_id") or "").strip()
+        region = (payload.get("region") or "na").strip().lower()
 
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT basic_credits FROM users WHERE id = ?", (user_id,))
-    user_row = c.fetchone()
-    if not user_row or user_row["basic_credits"] < 1:
-        conn.close()
-        return jsonify({"error": "Insufficient credits! Please buy credits from the panel to launch your guild glory bot."}), 402
+        if not clan_id:
+            return jsonify({"error": "Clan ID is required."}), 400
 
-    # Forward request directly to real upstream API using owner key
-    upstream_status, upstream_res = call_upstream("POST", "/api/client/auto-clan-group", {
-        "clan_id": clan_id,
-        "region": region
-    })
+        # Verify server region is online and not under maintenance
+        all_regions = get_processed_regions()
+        matched_region = next((r for r in all_regions if (r.get("id") or "").lower() == region or (r.get("region_code") or "").lower() == region), None)
+        if matched_region and not matched_region.get("enabled", True):
+            reason = matched_region.get("maintenance_reason") or f"Server region {matched_region.get('region_name', region.upper())} is currently under maintenance."
+            return jsonify({"error": reason}), 400
 
-    # Only treat as true success if HTTP 200 and upstream actually returned success and not error
-    is_upstream_success = (
-        upstream_status == 200 and
-        isinstance(upstream_res, dict) and
-        (upstream_res.get("success") is True or upstream_res.get("group_id") or upstream_res.get("status") == "success") and
-        not upstream_res.get("error")
-    )
+        conn = get_db()
+        c = conn.cursor()
 
-    if is_upstream_success:
-        # Only deduct customer credits when upstream actually started the bot!
-        c.execute("UPDATE users SET basic_credits = basic_credits - 1 WHERE id = ?", (user_id,))
-        group_id = str(upstream_res.get("group_id") or upstream_res.get("id") or f"grp_{int(time.time())}")
-        clan_name = upstream_res.get("clan_name") or f"Clan {clan_id}"
-        glory = upstream_res.get("glory_gained", 0)
-        c.execute("""
-            INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at)
-            VALUES (?, ?, ?, ?, ?, 'running', ?, 0, 'Just started', CURRENT_TIMESTAMP)
-        """, (group_id, user_id, clan_id, clan_name, region.upper(), glory))
-        tx_id = f"GLR-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
-        c.execute("""
-            INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
-            VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
-        """, (tx_id, user_id, session.get("username", "user"), f"LAUNCH-{group_id}"))
+        # ATOMIC CREDIT RESERVATION BEFORE UPSTREAM:
+        # Deduct 1 credit immediately. If user does NOT have >= 1 credits, c.rowcount == 0!
+        c.execute("UPDATE users SET basic_credits = basic_credits - 1 WHERE id = ? AND basic_credits >= 1", (user_id,))
         conn.commit()
-        conn.close()
-        return jsonify({
-            "success": True,
-            "message": f"Successfully launched Glory Boost for Clan {clan_id} in region {region.upper()}!",
-            "group_id": group_id,
-            "data": upstream_res
-        })
-    else:
-        # Upstream failed or has 0 credits / no balance / unauthorized / out of stock
-        # DO NOT deduct customer credit!
-        conn.close()
-        raw_err = upstream_res.get("error") if isinstance(upstream_res, dict) else str(upstream_res)
-        raw_str = f"{raw_err} {upstream_res}".lower()
+        if c.rowcount == 0:
+            conn.close()
+            return jsonify({"error": "Insufficient credits! Please buy credits from the panel to launch your guild glory bot."}), 402
 
-        is_balance_or_stock_issue = (
-            upstream_status in (401, 402, 403, 429, 500, 502, 503) or
-            any(w in raw_str for w in [
-                "insufficient", "credit", "balance", "stock", "empty", "0 credit", 
-                "unauthorized", "quota", "no credit", "not enough", "limit", "unavailable",
-                "out of"
-            ])
+        # Forward request directly to real upstream API using owner key
+        upstream_status, upstream_res = call_upstream("POST", "/api/client/auto-clan-group", {
+            "clan_id": clan_id,
+            "region": region
+        })
+
+        # Only treat as true success if HTTP 200 and upstream actually returned success and not error
+        is_upstream_success = (
+            upstream_status == 200 and
+            isinstance(upstream_res, dict) and
+            (upstream_res.get("success") is True or upstream_res.get("group_id") or upstream_res.get("status") == "success") and
+            not upstream_res.get("error")
         )
 
-        if is_balance_or_stock_issue:
-            err_msg = "Stock Unavailable! Glory bot slots/credits are currently out of stock. Your credits were NOT deducted. Please try again later or contact admin."
+        if is_upstream_success:
+            group_id = str(upstream_res.get("group_id") or upstream_res.get("id") or f"grp_{int(time.time())}")
+            clan_name = upstream_res.get("clan_name") or f"Clan {clan_id}"
+            glory = upstream_res.get("glory_gained", 0)
+            c.execute("""
+                INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at)
+                VALUES (?, ?, ?, ?, ?, 'running', ?, 0, 'Just started', CURRENT_TIMESTAMP)
+            """, (group_id, user_id, clan_id, clan_name, region.upper(), glory))
+            tx_id = f"GLR-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+            c.execute("""
+                INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+                VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
+            """, (tx_id, user_id, session.get("username", "user"), f"LAUNCH-{group_id}"))
+            conn.commit()
+            conn.close()
+            try:
+                trigger_async_sync()
+            except Exception:
+                pass
+            return jsonify({
+                "success": True,
+                "message": f"Successfully launched Glory Boost for Clan {clan_id} in region {region.upper()}!",
+                "group_id": group_id,
+                "data": upstream_res
+            })
         else:
-            err_msg = f"Stock Unavailable! {raw_err}"
+            # Upstream failed -> REFUND the reserved 1 credit back to user immediately!
+            c.execute("UPDATE users SET basic_credits = basic_credits + 1 WHERE id = ?", (user_id,))
+            conn.commit()
+            conn.close()
+            try:
+                trigger_async_sync()
+            except Exception:
+                pass
 
-        return jsonify({
-            "success": False,
-            "stock_unavailable": True,
-            "error": err_msg,
-            "upstream_status": upstream_status,
-            "upstream_response": upstream_res
-        }), 400
+            raw_err = upstream_res.get("error") if isinstance(upstream_res, dict) else str(upstream_res)
+            raw_str = f"{raw_err} {upstream_res}".lower()
+
+            is_balance_or_stock_issue = (
+                upstream_status in (401, 402, 403, 429, 500, 502, 503) or
+                any(w in raw_str for w in [
+                    "insufficient", "credit", "balance", "stock", "empty", "0 credit", 
+                    "unauthorized", "quota", "no credit", "not enough", "limit", "unavailable",
+                    "out of"
+                ])
+            )
+
+            if is_balance_or_stock_issue:
+                err_msg = "Stock Unavailable! Glory bot slots/credits are currently out of stock. Your credits were NOT deducted. Please try again later or contact admin."
+            else:
+                err_msg = f"Stock Unavailable! {raw_err}"
+
+            return jsonify({
+                "success": False,
+                "stock_unavailable": True,
+                "error": err_msg,
+                "upstream_status": upstream_status,
+                "upstream_response": upstream_res
+            }), 400
+    finally:
+        user_lock.release()
 
 @app.route("/api/client/group-action", methods=["POST"])
 def client_group_action():
@@ -3057,57 +3103,84 @@ def stealth_gateway():
         res_data = get_user_dashboard_state(user_id) or {}
 
     elif action == "launch_group":
-        ok_launch, wait_launch = limiter.is_allowed(f"act_launch:user:{user_id}", 10, 60)
+        ok_launch, wait_launch = limiter.is_allowed(f"act_launch_bot:{user_id}", 1, 3)
         if not ok_launch:
-            res_data = {"error": f"Bot launch limit reached. Please wait {wait_launch}s before starting another bot."}
+            res_data = {"error": f"Bot launch in progress. Please wait {wait_launch}s before starting another bot."}
             encoded_r = base64.b64encode(json.dumps(res_data).encode("utf-8")).decode("utf-8")
             return jsonify({"_r": encoded_r}), 429
-        clan_id = (params.get("clan_id") or "").strip()
-        region = (params.get("region") or "na").strip().lower()
-        if not clan_id:
-            res_data = {"error": "Clan ID is required."}
-        else:
-            conn = get_db()
-            c = conn.cursor()
-            c.execute("SELECT basic_credits, username FROM users WHERE id = ?", (user_id,))
-            user_row = c.fetchone()
-            if not user_row or user_row["basic_credits"] < 1:
-                conn.close()
-                res_data = {"error": "Insufficient credits! Please buy credits from the panel."}
+
+        user_lock = _launch_locks[user_id]
+        if not user_lock.acquire(blocking=False):
+            res_data = {"error": "A bot launch is already in progress for your account. Please wait a moment."}
+            encoded_r = base64.b64encode(json.dumps(res_data).encode("utf-8")).decode("utf-8")
+            return jsonify({"_r": encoded_r}), 429
+
+        try:
+            clan_id = (params.get("clan_id") or "").strip()
+            region = (params.get("region") or "na").strip().lower()
+            if not clan_id:
+                res_data = {"error": "Clan ID is required."}
             else:
-                uname = user_row["username"]
-                upstream_status, upstream_res = call_upstream("POST", "/api/client/auto-clan-group", {
-                    "clan_id": clan_id,
-                    "region": region
-                })
-                if upstream_status == 200 and isinstance(upstream_res, dict) and (upstream_res.get("group_id") or upstream_res.get("id")):
-                    group_id = str(upstream_res.get("group_id") or upstream_res.get("id"))
-                    clan_name = upstream_res.get("clan_name") or f"Clan {clan_id}"
-                    c.execute("UPDATE users SET basic_credits = basic_credits - 1 WHERE id = ? AND basic_credits >= 1", (user_id,))
-                    c.execute("""
-                        INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at)
-                        VALUES (?, ?, ?, ?, ?, 'running', 0, 0, 'Just started', CURRENT_TIMESTAMP)
-                    """, (group_id, user_id, clan_id, clan_name, region.upper()))
-                    tx_id = f"GLR-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
-                    c.execute("""
-                        INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
-                        VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
-                    """, (tx_id, user_id, uname, f"LAUNCH-{group_id}"))
-                    conn.commit()
-                    new_credits = max(0, user_row["basic_credits"] - 1)
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("SELECT username FROM users WHERE id = ?", (user_id,))
+                user_row = c.fetchone()
+                uname = user_row["username"] if user_row else "user"
+
+                # ATOMIC CREDIT RESERVATION BEFORE UPSTREAM:
+                c.execute("UPDATE users SET basic_credits = basic_credits - 1 WHERE id = ? AND basic_credits >= 1", (user_id,))
+                conn.commit()
+                if c.rowcount == 0:
                     conn.close()
-                    res_data = {
-                        "success": True,
-                        "group_id": group_id,
-                        "clan_id": clan_id,
-                        "region": region,
-                        "new_basic_credits": new_credits,
-                        "message": f"Clan glory bot launched successfully (Group ID: {group_id})!"
-                    }
+                    res_data = {"error": "Insufficient credits! Please buy credits from the panel."}
                 else:
-                    conn.close()
-                    err = upstream_res.get("error") if isinstance(upstream_res, dict) else "Upstream rejected bot launch"
-                    res_data = {"error": f"Failed to launch glory bot: {err}"}
+                    upstream_status, upstream_res = call_upstream("POST", "/api/client/auto-clan-group", {
+                        "clan_id": clan_id,
+                        "region": region
+                    })
+                    if upstream_status == 200 and isinstance(upstream_res, dict) and (upstream_res.get("group_id") or upstream_res.get("id")):
+                        group_id = str(upstream_res.get("group_id") or upstream_res.get("id"))
+                        clan_name = upstream_res.get("clan_name") or f"Clan {clan_id}"
+                        c.execute("""
+                            INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at)
+                            VALUES (?, ?, ?, ?, ?, 'running', 0, 0, 'Just started', CURRENT_TIMESTAMP)
+                        """, (group_id, user_id, clan_id, clan_name, region.upper()))
+                        tx_id = f"GLR-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+                        c.execute("""
+                            INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+                            VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
+                        """, (tx_id, user_id, uname, f"LAUNCH-{group_id}"))
+                        conn.commit()
+
+                        c.execute("SELECT basic_credits FROM users WHERE id = ?", (user_id,))
+                        u_row = c.fetchone()
+                        new_credits = u_row["basic_credits"] if u_row else 0
+                        conn.close()
+                        try:
+                            trigger_async_sync()
+                        except Exception:
+                            pass
+                        res_data = {
+                            "success": True,
+                            "group_id": group_id,
+                            "clan_id": clan_id,
+                            "region": region,
+                            "new_basic_credits": new_credits,
+                            "message": f"Clan glory bot launched successfully (Group ID: {group_id})!"
+                        }
+                    else:
+                        # Refund reserved credit
+                        c.execute("UPDATE users SET basic_credits = basic_credits + 1 WHERE id = ?", (user_id,))
+                        conn.commit()
+                        conn.close()
+                        try:
+                            trigger_async_sync()
+                        except Exception:
+                            pass
+                        err = upstream_res.get("error") if isinstance(upstream_res, dict) else "Upstream rejected bot launch"
+                        res_data = {"error": f"Failed to launch glory bot: {err}"}
+        finally:
+            user_lock.release()
 
     elif action == "group_action":
         group_id = str(params.get("group_id") or "").strip()
