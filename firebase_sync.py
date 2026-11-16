@@ -58,7 +58,7 @@ def export_sqlite_to_json():
         "tables": {}
     }
 
-    target_tables = ["users", "settings", "groups", "transactions", "coupons"]
+    target_tables = ["users", "settings", "groups", "transactions", "coupons", "server_maintenance"]
     for table in target_tables:
         try:
             c.execute(f"SELECT * FROM {table}")
@@ -163,6 +163,19 @@ def import_json_to_sqlite(data):
                     cpn.get("id"), cpn.get("code"), cpn.get("credits", 0),
                     cpn.get("created_by", "admin"), cpn.get("status", "active"),
                     cpn.get("redeemed_by"), cpn.get("redeemed_at"), cpn.get("created_at")
+                ))
+
+        # 6. Restore Server Maintenance
+        if "server_maintenance" in tables and isinstance(tables["server_maintenance"], list):
+            c.execute("DELETE FROM server_maintenance")
+            for sm in tables["server_maintenance"]:
+                c.execute('''
+                    INSERT OR REPLACE INTO server_maintenance (server_key, server_name, is_maintenance, maintenance_msg, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (
+                    sm.get("server_key"), sm.get("server_name"),
+                    sm.get("is_maintenance", 0), sm.get("maintenance_msg", ""),
+                    sm.get("updated_at")
                 ))
 
         conn.commit()

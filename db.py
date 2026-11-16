@@ -4,14 +4,11 @@ import hashlib
 import time
 
 def resolve_db_path():
-    # 1. Custom env var if set
-    custom_path = os.environ.get("DATABASE_PATH")
-    if custom_path:
-        os.makedirs(os.path.dirname(os.path.abspath(custom_path)), exist_ok=True)
-        return custom_path
-
-    # 2. Runtime in-memory cache in /tmp (Primary source of truth is Firebase Realtime Database)
-    return "/tmp/ffglory_runtime_cache.db"
+    # Primary source of truth is 100% Firebase Realtime Database in the cloud.
+    # High-speed runtime cache operates entirely in RAM (/dev/shm or /tmp). No .db file.
+    if os.path.isdir("/dev/shm"):
+        return "/dev/shm/firebase_realtime.ram"
+    return "/tmp/firebase_realtime.ram"
 
 DB_PATH = resolve_db_path()
 

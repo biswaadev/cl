@@ -31,6 +31,22 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 _db_ready = False
 _db_init_lock = threading.Lock()
+_last_firebase_fetch = 0
+_fetch_lock = threading.Lock()
+
+def fetch_from_firebase_realtime(force=False, min_interval=0.8):
+    """Fetches complete live state directly from Firebase Realtime Database for actions."""
+    global _last_firebase_fetch
+    now = time.time()
+    if force or (now - _last_firebase_fetch >= min_interval):
+        with _fetch_lock:
+            now = time.time()
+            if force or (now - _last_firebase_fetch >= min_interval):
+                try:
+                    sync_pull_from_firebase()
+                    _last_firebase_fetch = time.time()
+                except Exception as e:
+                    print(f"[Firebase Fetch Error]: {e}")
 
 def ensure_db_ready():
     global _db_ready
@@ -56,7 +72,6 @@ FORBIDDEN_EXACT_PATHS = {'/panel.db', '/state.json', '/server.py', '/db.py', '/r
 
 @app.before_request
 def security_firewall_check():
-    ensure_db_ready()
     req_path = (request.path or '').lower().rstrip('/')
     if not req_path:
         return None
@@ -67,6 +82,12 @@ def security_firewall_check():
     if not req_path.startswith('/api/'):
         if req_path.endswith(FORBIDDEN_EXTENSIONS):
             return jsonify({"error": "Not found"}), 404
+
+    ensure_db_ready()
+
+    # Fetch live state from Firebase Realtime Database on actions (excluding static assets)
+    if not req_path.endswith(('.css', '.png', '.jpg', '.jpeg', '.svg', '.ico', '.webp')):
+        fetch_from_firebase_realtime()
 
 UPSTREAM_BASE = "https://ffglory.pro"
 
