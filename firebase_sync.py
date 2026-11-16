@@ -14,6 +14,7 @@ import requests
 from db import get_db, resolve_db_path
 
 FIREBASE_DB_URL = os.environ.get("FIREBASE_DB_URL", "https://java-d72c4-default-rtdb.firebaseio.com").rstrip("/")
+DEFAULT_FIREBASE_SECRET = "jRD9dMfKsio67rKV6QCSxWQZJHqYKbt7IKDTu4Sk"
 
 _sync_lock = threading.Lock()
 _last_sync_time = 0
@@ -24,7 +25,7 @@ _trigger_timer = None
 _timer_lock = threading.Lock()
 
 def get_secret():
-    """Retrieves secret from environment or DB settings."""
+    """Retrieves secret from environment, DB settings, or default python secret."""
     sec = os.environ.get("FIREBASE_DB_SECRET", "").strip()
     if sec:
         return sec
@@ -38,7 +39,7 @@ def get_secret():
             return str(row["value"]).strip()
     except Exception:
         pass
-    return ""
+    return DEFAULT_FIREBASE_SECRET
 
 def get_firebase_url(path="ffglory"):
     clean_path = path.strip("/ ")
