@@ -439,14 +439,25 @@ def get_cached_group_glory(gid, force_refresh=False):
         return cached["total_glory"], cached["details"]
     return 0, []
 
+_UPSTREAM_GROUPS_CACHE = {"ts": 0, "status": 0, "data": []}
+
 def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
     """
-    Fetches running groups directly from ffglory.pro API.
+    Fetches running groups directly from ffglory.pro API with high performance caching.
     Auto-updates SQLite DB 'groups' table for admin tracking.
     Enforces STRICT user isolation: Users only see groups launched by their own account.
     Returns live formatted groups for frontend with real Clan Name & Weekly Glory from get-clan-info API.
     """
-    up_status, up_groups = call_upstream("GET", "/api/client/my-groups")
+    now = time.time()
+    if not force_refresh and (now - _UPSTREAM_GROUPS_CACHE["ts"] < 8):
+        up_status = _UPSTREAM_GROUPS_CACHE["status"]
+        up_groups = _UPSTREAM_GROUPS_CACHE["data"]
+    else:
+        up_status, up_groups = call_upstream("GET", "/api/client/my-groups")
+        if up_status == 200:
+            _UPSTREAM_GROUPS_CACHE["ts"] = now
+            _UPSTREAM_GROUPS_CACHE["status"] = up_status
+            _UPSTREAM_GROUPS_CACHE["data"] = up_groups
     
     conn = get_db()
     c = conn.cursor()
@@ -465,20 +476,24 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
         # 2. Upsert each upstream group into DB for Admin records
         for gid, live in live_map.items():
             cid = str(live.get("clan_id") or "")
-            
-            # Fetch real clan info from ffglory.pro get-clan-info API
-            c_info = get_cached_clan_info(gid, force_refresh=force_refresh)
-            decoded = (c_info.get("decoded") if isinstance(c_info, dict) else {}) or {}
-            cname = decoded.get("clan_name") or live.get("clan_name") or f"Clan {cid}"
-
             region = str(live.get("region") or "BD").upper()
             status = live.get("status") or "running"
-            
-            real_glory, real_details = get_cached_group_glory(gid, force_refresh=force_refresh)
-            glory = real_glory if real_glory > 0 else (live.get("glory_farmed") or live.get("glory_gained") or 0)
             uptime = live.get("uptime") or "Active"
             games = live.get("games_played") or 0
-            squad_raw = real_details if real_details else (live.get("details") or live.get("squad"))
+
+            # Only query active running groups for live glory/squad to eliminate 10+ seconds of upstream network lag
+            if status in ("running", "online"):
+                c_info = get_cached_clan_info(gid, force_refresh=force_refresh)
+                decoded = (c_info.get("decoded") if isinstance(c_info, dict) else {}) or {}
+                cname = decoded.get("clan_name") or live.get("clan_name") or f"Clan {cid}"
+                real_glory, real_details = get_cached_group_glory(gid, force_refresh=force_refresh)
+                glory = real_glory if real_glory > 0 else (live.get("glory_farmed") or live.get("glory_gained") or 0)
+                squad_raw = real_details if real_details else (live.get("details") or live.get("squad"))
+            else:
+                cname = live.get("clan_name") or f"Clan {cid}"
+                glory = live.get("glory_farmed") or live.get("glory_gained") or 0
+                squad_raw = live.get("details") or live.get("squad")
+
             squad_json = json.dumps(squad_raw) if squad_raw else None
 
             c.execute("SELECT id, user_id, squad_json FROM groups WHERE group_id = ?", (gid,))
@@ -649,7 +664,7 @@ def get_user_dashboard_state(user_id):
     conn.close()
 
     is_admin = user_data.get("role") == "admin"
-    groups = fetch_and_sync_groups(user_id=user_id, is_admin=is_admin, force_refresh=True)
+    groups = fetch_and_sync_groups(user_id=user_id, is_admin=is_admin, force_refresh=False)
 
     conn = get_db()
     c = conn.cursor()
@@ -1073,7 +1088,7 @@ def get_my_groups():
         return jsonify([]), 200
 
     is_admin = session.get("role") == "admin"
-    groups = fetch_and_sync_groups(user_id=user_id, is_admin=is_admin, force_refresh=True)
+    groups = fetch_and_sync_groups(user_id=user_id, is_admin=is_admin, force_refresh=False)
     return jsonify(groups)
 
 @app.route("/api/client/auto-clan-group", methods=["POST"])
