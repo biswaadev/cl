@@ -327,7 +327,13 @@ def save_server_overrides(overrides):
 def is_global_maintenance():
     return get_setting("global_maintenance_mode", "0") == "1"
 
+_REGIONS_CACHE = {"ts": 0, "data": []}
+
 def get_processed_regions():
+    now = time.time()
+    if now - _REGIONS_CACHE["ts"] < 60 and _REGIONS_CACHE["data"]:
+        return _REGIONS_CACHE["data"]
+
     upstream_status, upstream_data = call_upstream("GET", "/api/pricing")
     raw_regions = []
     if upstream_status == 200 and isinstance(upstream_data, dict):
@@ -375,6 +381,8 @@ def get_processed_regions():
 
         processed.append(r)
 
+    _REGIONS_CACHE["ts"] = now
+    _REGIONS_CACHE["data"] = processed
     return processed
 
 # ==================== STATIC PAGE ROUTES ====================
@@ -407,7 +415,7 @@ def get_cached_clan_info(gid, force_refresh=False):
     now = time.time()
     gid_str = str(gid)
     cached = _CLAN_CACHE.get(gid_str)
-    if not force_refresh and cached and (now - cached["ts"] < 30):
+    if not force_refresh and cached and (now - cached["ts"] < 300):
         return cached["data"]
     try:
         st, res = call_upstream("POST", "/api/client/group-action", json_data={"action": "get-clan-info", "group_id": gid_str})
@@ -424,7 +432,7 @@ def get_cached_group_glory(gid, force_refresh=False):
     now = time.time()
     gid_str = str(gid)
     cached = _GLORY_CACHE.get(gid_str)
-    if not force_refresh and cached and (now - cached["ts"] < 5):
+    if not force_refresh and cached and (now - cached["ts"] < 15):
         return cached["total_glory"], cached["details"]
     try:
         st, res = call_upstream("POST", "/api/client/group-action", json_data={"action": "get-glory", "group_id": gid_str})
@@ -539,8 +547,10 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
 
             cid = str(live.get("clan_id") or "")
             
-            # Real Clan Info fetched directly from ffglory.pro get-clan-info API
-            c_info = get_cached_clan_info(gid, force_refresh=force_refresh)
+            status = live.get("status") or "running"
+            
+            # Fast in-memory lookup without duplicate upstream round-trips
+            c_info = _CLAN_CACHE.get(str(gid), {}).get("data") if status in ("running", "online") else None
             decoded = (c_info.get("decoded") if isinstance(c_info, dict) else {}) or {}
             cglory = (c_info.get("clan_glory") if isinstance(c_info, dict) else {}) or {}
             lb = (c_info.get("leaderboard") if isinstance(c_info, dict) else {}) or {}
@@ -556,7 +566,7 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
                 members = live.get("members") or "—"
 
             raw_weekly = int(cglory.get("weekly_glory") or 0)
-            weekly_glory = f"{raw_weekly:,}" if raw_weekly > 0 else (live.get("weekly_glory") or "0")
+            weekly_glory = f"{raw_weekly:,}" if raw_weekly > 0 else str(live.get("glory_farmed") or live.get("glory_gained") or "0")
             clan_total_glory = int(cglory.get("total_glory") or raw_weekly or live.get("clan_total_glory") or 0)
 
             if lb.get("rank"):
@@ -566,7 +576,9 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
             else:
                 clan_rank = live.get("clan_rank") or "#--"
 
-            real_glory, real_details = get_cached_group_glory(gid, force_refresh=force_refresh)
+            cached_glory = _GLORY_CACHE.get(str(gid), {})
+            real_glory = cached_glory.get("total_glory", 0) if status in ("running", "online") else int(live.get("glory_farmed") or live.get("glory_gained") or 0)
+            real_details = cached_glory.get("details", []) if status in ("running", "online") else []
             squad = real_details if real_details else (live.get("details") or live.get("squad") or [])
             if not squad:
                 c.execute("SELECT squad_json, glory_gained FROM groups WHERE group_id = ?", (gid,))
@@ -652,6 +664,21 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
     conn.close()
     return formatted_groups
 
+_UPSTREAM_CREDITS_CACHE = {"ts": 0, "credits": 0}
+
+def get_cached_upstream_credits():
+    now = time.time()
+    if now - _UPSTREAM_CREDITS_CACHE["ts"] < 30:
+        return _UPSTREAM_CREDITS_CACHE["credits"]
+    try:
+        up_status, up_me = call_upstream("GET", "/api/auth/me")
+        if up_status == 200 and isinstance(up_me, dict):
+            _UPSTREAM_CREDITS_CACHE["credits"] = up_me.get("basic_credits", 0)
+            _UPSTREAM_CREDITS_CACHE["ts"] = now
+    except Exception:
+        pass
+    return _UPSTREAM_CREDITS_CACHE["credits"]
+
 def get_user_dashboard_state(user_id):
     conn = get_db()
     c = conn.cursor()
@@ -686,10 +713,7 @@ def get_user_dashboard_state(user_id):
 
     regions = get_processed_regions()
 
-    upstream_credits = 0
-    up_status, up_me = call_upstream("GET", "/api/auth/me")
-    if up_status == 200 and isinstance(up_me, dict):
-        upstream_credits = up_me.get("basic_credits", 0)
+    upstream_credits = get_cached_upstream_credits()
 
     pricing = {
         "credit_price_inr": price_inr,
@@ -1065,10 +1089,7 @@ def get_pricing():
     regions = get_processed_regions()
     price_inr = float(get_setting("famgateway_price_inr", get_setting("credit_price_inr", "120.0")))
 
-    upstream_credits = 0
-    up_status, up_me = call_upstream("GET", "/api/auth/me")
-    if up_status == 200 and isinstance(up_me, dict):
-        upstream_credits = up_me.get("basic_credits", 0)
+    upstream_credits = get_cached_upstream_credits()
 
     return jsonify({
         "credit_price_inr": price_inr,
