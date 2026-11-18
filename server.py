@@ -570,19 +570,27 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
             if safe_status == 200 and isinstance(safe_res, dict):
                 launches = safe_res.get("launches") or []
                 for l in launches:
-                    phase = (l.get("phase") or "running").lower()
-                    st = "running" if phase in ("generating", "queued", "running") else ("failed" if phase == "failed" else "completed")
+                    state_val = (l.get("state") or l.get("phase") or "running").lower()
+                    st = "running" if state_val in ("generating", "queued", "running") else ("failed" if state_val == "failed" else "completed")
+                    guild_info = l.get("guild") or {}
+                    bots_list = l.get("bots") or []
                     g_obj = {
-                        "group_id": str(l.get("id")),
+                        "group_id": str(l.get("group_id") or l.get("id")),
                         "id": str(l.get("id")),
-                        "clan_id": str(l.get("guild_id") or ""),
-                        "clan_name": (l.get("guild") or {}).get("name") or f"Clan {l.get('guild_id')}",
+                        "clan_id": str(l.get("guild_id") or guild_info.get("id") or ""),
+                        "clan_name": guild_info.get("name") or f"Clan {l.get('guild_id')}",
+                        "clan_level": guild_info.get("level") or 4,
+                        "members": guild_info.get("members") or "—",
+                        "captain": guild_info.get("captain") or "—",
+                        "weekly_glory": str(guild_info.get("weekly_glory") or l.get("glory") or 0),
+                        "clan_total_glory": guild_info.get("total_glory") or 0,
                         "region": "IN",
                         "status": st,
-                        "uptime": "Active" if st == "running" else phase.title(),
+                        "uptime": "Active" if st == "running" else state_val.title(),
                         "glory_farmed": int(l.get("glory") or 0),
                         "glory_gained": int(l.get("glory") or 0),
-                        "created_at": l.get("created_at") or ""
+                        "created_at": l.get("created_at") or "",
+                        "details": [{"nickname": b, "glory": int(l.get("glory", 0)) // max(1, len(bots_list))} for b in bots_list] if bots_list else []
                     }
                     up_groups.append(g_obj)
         else:
