@@ -311,6 +311,11 @@ REGION_FLAGS = {
     'bd': '🇧🇩',
     'pk': '🇵🇰',
     'in': '🇮🇳',
+    'in_safe': '🇮🇳',
+    'in_safe_2': '🇮🇳',
+    'in_safe_3': '🇮🇳',
+    'in_safe_vip': '🇮🇳',
+    'safe': '🇮🇳',
     'indo': '🇮🇩',
     'ind': '🇮🇩',
     'id': '🇮🇩',
@@ -406,10 +411,10 @@ def normalize_region_for_upstream(region_input):
 _REGIONS_CACHE = {"ts": 0, "provider": "", "raw_pro": [], "data": []}
 
 SAFE_SQUAD_NODES = [
-    {"id": "in_safe", "region_code": "IN", "region_name": "India (Special Safe Squad - Node 1)", "cost": 1, "tier": "basic", "default_enabled": True},
-    {"id": "in_safe_2", "region_code": "IN", "region_name": "India Safe Squad (Cluster 2)", "cost": 1, "tier": "basic", "default_enabled": False},
-    {"id": "in_safe_3", "region_code": "IN", "region_name": "India Safe Squad (Fast Node)", "cost": 1, "tier": "basic", "default_enabled": False},
-    {"id": "in_safe_vip", "region_code": "IN", "region_name": "India Safe Squad (VIP Dedicated)", "cost": 1, "tier": "premium", "default_enabled": False}
+    {"id": "in_safe", "region_code": "IN", "region_name": "India (Special Safe Squad - Node 1)", "cost": 1, "tier": "basic", "default_enabled": True, "flag": "🇮🇳"},
+    {"id": "in_safe_2", "region_code": "IN", "region_name": "India Safe Squad (Cluster 2)", "cost": 1, "tier": "basic", "default_enabled": False, "flag": "🇮🇳"},
+    {"id": "in_safe_3", "region_code": "IN", "region_name": "India Safe Squad (Fast Node)", "cost": 1, "tier": "basic", "default_enabled": False, "flag": "🇮🇳"},
+    {"id": "in_safe_vip", "region_code": "IN", "region_name": "India Safe Squad (VIP Dedicated)", "cost": 1, "tier": "premium", "default_enabled": False, "flag": "🇮🇳"}
 ]
 
 def get_processed_regions(only_active=False, for_admin=False):
@@ -469,7 +474,10 @@ def get_processed_regions(only_active=False, for_admin=False):
         rcode = (r.get("region_code") or "").lower()
         upstream_enabled = bool(r.get("enabled", True))
         r["upstream_enabled"] = upstream_enabled
-        r["flag"] = r.get("flag") or REGION_FLAGS.get(rid) or REGION_FLAGS.get(rcode) or "🌐"
+        if rid.startswith("in_safe") or rcode in ("in", "in_safe") or rid == "safe":
+            r["flag"] = "🇮🇳"
+        else:
+            r["flag"] = r.get("flag") or REGION_FLAGS.get(rid) or REGION_FLAGS.get(rcode) or "🌐"
 
         override_val = None
         if rid in overrides:

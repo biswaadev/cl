@@ -2716,7 +2716,7 @@
     }
 
     const REGION_FLAGS = {
-        'bd': '🇧🇩', 'pk': '🇵🇰', 'in': '🇮🇳', 'indo': '🇮🇩', 'ind': '🇮🇩', 'id': '🇮🇩',
+        'bd': '🇧🇩', 'pk': '🇵🇰', 'in': '🇮🇳', 'in_safe': '🇮🇳', 'in_safe_2': '🇮🇳', 'in_safe_3': '🇮🇳', 'in_safe_vip': '🇮🇳', 'safe': '🇮🇳', 'indo': '🇮🇩', 'ind': '🇮🇩', 'id': '🇮🇩',
         'sg': '🇸🇬', 'th': '🇹🇭', 'vn': '🇻🇳', 'me': '🇸🇦', 'ghrab': '🇦🇪', 'eu': '🇪🇺',
         'na': '🇺🇸', 'us': '🇺🇸', 'br': '🇧🇷', 'ru': '🇷🇺', 'sac': '🌎', 'sa': '🇸🇦', 'ae': '🇦🇪'
     };
@@ -2724,6 +2724,7 @@
     function getRegionFlag(reg) {
         if (!reg) return '🌐';
         const key = String(reg).toLowerCase().trim();
+        if (key === 'in' || key.startsWith('in_safe') || key === 'safe' || key === 'india' || key === 'in_safe_node') return '🇮🇳';
         return REGION_FLAGS[key] || '🌐';
     }
 

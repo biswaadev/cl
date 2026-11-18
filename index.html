@@ -2524,6 +2524,11 @@
         'bd': '🇧🇩',
         'pk': '🇵🇰',
         'in': '🇮🇳',
+        'in_safe': '🇮🇳',
+        'in_safe_2': '🇮🇳',
+        'in_safe_3': '🇮🇳',
+        'in_safe_vip': '🇮🇳',
+        'safe': '🇮🇳',
         'indo': '🇮🇩',
         'ind': '🇮🇩',
         'id': '🇮🇩',
@@ -2545,6 +2550,7 @@
     function getRegionFlag(reg) {
         if (!reg) return '🌐';
         const key = String(reg).toLowerCase().trim();
+        if (key === 'in' || key.startsWith('in_safe') || key === 'safe' || key === 'india' || key === 'in (safe)') return '🇮🇳';
         return REGION_FLAGS[key] || '🌐';
     }
 
@@ -2637,6 +2643,9 @@
         Object.values(clansMap).forEach(clan => {
             const totalRunning = clan.groups.filter(g => g.status === 'running' || g.status === 'online').length;
             const totalGroupGlory = clan.groups.reduce((acc, g) => acc + (Number(g.glory_gained) || 0), 0);
+            const clanHasSafe = clan.groups.some(g => (g.provider === 'ffglory_safe') || (g.region === 'IN_SAFE' || g.region === 'in_safe') || String(g.id || g.group_id).startsWith('SAFE-'));
+            const clanRegionLabel = clanHasSafe ? 'India (Safe Squad)' : (clan.region || 'NA');
+            const clanRegionFlag = clanHasSafe ? '🇮🇳' : getRegionFlag(clan.region);
 
             const rankNum = parseInt(String(clan.clan_rank).replace('#', '')) || 23;
             const rankPrev = `#${Math.max(1, rankNum - 1)}`;
@@ -2670,6 +2679,7 @@
                         <div class="flex items-center gap-4 leaderboard-identity">
                             <div class="w-14 h-14 rounded-lg border-2 border-[#ffd700] overflow-hidden bg-black relative shrink-0">
                                  <img src="/clan.png" class="w-full h-full object-cover" alt="Clan emblem" onerror="this.onerror=null;this.src='/assets/ffglory-logo-96.png'">
+                                 ${clanHasSafe ? '<div class="absolute top-0 left-0 bg-black/80 px-1 py-0.5 rounded-br text-[11px] leading-none select-none" title="India Safe Squad">🇮🇳</div>' : ''}
                                  <div id="clan-level-${clan.clan_id}" class="absolute bottom-0 right-0 bg-[#ffd700] text-black text-[10px] font-bold px-1">LV.${clan.clan_level}</div>
                             </div>
                             <div class="flex flex-col min-w-0">
@@ -2678,7 +2688,7 @@
                                 <div class="flex items-center gap-2 text-gray-500 text-[10px] font-mono notranslate uppercase">
                                     <span>ID: ${escapeHtml(clan.clan_id)}</span>
                                     <span class="text-gray-700">|</span>
-                                    <span id="clan-region-${clan.clan_id}" class="">${escapeHtml(clan.region)}</span>
+                                    <span id="clan-region-${clan.clan_id}" class="inline-flex items-center gap-1"><span>${clanRegionFlag}</span><span>${escapeHtml(clanRegionLabel)}</span></span>
                                     <span class="text-gray-700">|</span>
                                     <span class="text-blue-400">${clan.groups.length} ${clan.groups.length === 1 ? 'group' : 'groups'}</span>
                                 </div>
@@ -2692,7 +2702,7 @@
                                 <div class="clan-ranking" role="status" data-state="ranked" aria-busy="false" title="Leaderboard updated">
                                     <div class="clan-ranking-title">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3h8v6a4 4 0 0 1-8 0V3z M8 5H4v2a4 4 0 0 0 4 4 M16 5h4v2a4 4 0 0 1-4 4 M12 13v5 M8 21h8 M9 18h6v3"></path></svg>
-                                        <span>${escapeHtml(clan.region)} · Weekly top 100</span>
+                                        <span>${clanRegionFlag} ${escapeHtml(clanRegionLabel)} · Weekly top 100</span>
                                     </div>
                                     <div class="clan-rank-timeline">
                                         <div class="clan-rank-neighbor" aria-hidden="true"><span class="clan-rank-position">${rankPrev}</span><span class="clan-rank-placeholder"></span></div>
@@ -2789,13 +2799,13 @@
                             return `
                                 <div class="ng-card p-4 relative overflow-hidden group-card" id="card-${gid}" data-running="${isOnline}">
                                     <div class="flex gap-3 mb-3 relative z-10 group-classic-heading">
-                                        <div class="group-shield">
-                                            <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 2.18l7 3.12v5.7c0 4.83-3.23 9.36-7 10.57V3.18z"></path><path d="M12 7l-1.5 3.5L7 11l3 2.5L9 17l3-2 3 2-1-3.5L17 11l-3.5-.5z"></path></svg>
+                                        <div class="group-shield flex items-center justify-center select-none" title="${isSafeSquad ? 'India Safe Squad' : 'Standard Squad'}">
+                                            ${isSafeSquad ? '<span class="text-xl leading-none">🇮🇳</span>' : `<svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 2.18l7 3.12v5.7c0 4.83-3.23 9.36-7 10.57V3.18z"></path><path d="M12 7l-1.5 3.5L7 11l3 2.5L9 17l3-2 3 2-1-3.5L17 11l-3.5-.5z"></path></svg>`}
                                         </div>
                                         <div class="flex-1 min-w-0">
                                             <div class="flex items-center justify-between gap-2 group-identity-line">
                                                 <div class="flex items-center gap-2 min-w-0">
-                                                    <span class="group-id-badge">Group</span>
+                                                    <span class="group-id-badge ${isSafeSquad ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : ''}">${isSafeSquad ? '🇮🇳 Safe' : 'Group'}</span>
                                                     <h3 class="font-bold text-sm md:text-base text-[#e8d5b0] tracking-wide font-mono notranslate truncate">${gid}</h3>
                                                     <div class="activity-led shrink-0" title="Container active"></div>
                                                 </div>
@@ -2827,7 +2837,7 @@
                                         </div>
                                         <div class="group-fact">
                                             <div class="group-fact-label"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path></svg>Region</div>
-                                            <span class="notranslate group-stat-value">${escapeHtml(clan.region)}</span>
+                                            <span class="notranslate group-stat-value">${isSafeSquad ? '🇮🇳 India (Safe)' : `${getRegionFlag(g.region || clan.region)} ${escapeHtml(g.region || clan.region)}`}</span>
                                         </div>
                                         <div class="group-fact">
                                             <div class="group-fact-label"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>Accounts</div>
@@ -3375,7 +3385,7 @@
         }
 
         activeRegions.forEach((reg, index) => {
-            const flag = getRegionFlag(reg.id || reg.region_code);
+            const flag = reg.flag || getRegionFlag(reg.id || reg.region_code);
             const opt = document.createElement('option');
             opt.value = reg.id;
             opt.textContent = `${flag}  ${reg.region_name} (${reg.region_code})`;
@@ -3416,7 +3426,7 @@
             select.value = activeOpt.id;
             const valEl = document.getElementById('region-picker-value');
             if (valEl) {
-                const flag = getRegionFlag(activeOpt.id || activeOpt.region_code);
+                const flag = activeOpt.flag || getRegionFlag(activeOpt.id || activeOpt.region_code);
                 valEl.innerHTML = `<span class="mr-2 text-base leading-none">${flag}</span><span>${activeOpt.region_name} (${activeOpt.region_code})</span>`;
             }
         }
@@ -3753,7 +3763,8 @@
         document.getElementById('confirm-clan').textContent = clanId;
         const confirmRegObj = (currentPricing?.regions || []).find(r => r.id === region || r.region_code?.toLowerCase() === region.toLowerCase());
         const confirmRegTitle = confirmRegObj ? `${confirmRegObj.region_name} (${confirmRegObj.region_code})` : region.toUpperCase();
-        document.getElementById('confirm-region').innerHTML = `<span class="mr-1.5 text-base leading-none">${getRegionFlag(region)}</span><span>${escapeHtml(confirmRegTitle)}</span>`;
+        const confirmFlag = confirmRegObj?.flag || getRegionFlag(region);
+        document.getElementById('confirm-region').innerHTML = `<span class="mr-1.5 text-base leading-none">${confirmFlag}</span><span>${escapeHtml(confirmRegTitle)}</span>`;
         document.getElementById('confirm-credits').textContent = '1 Credit';
         document.getElementById('confirm-price').textContent = `₹${(currentPricing?.credit_price_inr || 120.0)} INR`;
         
