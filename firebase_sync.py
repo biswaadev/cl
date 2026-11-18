@@ -24,30 +24,169 @@ _last_sync_error = None
 _trigger_timer = None
 _timer_lock = threading.Lock()
 
+def get_db_url():
+    """Retrieves Firebase DB URL dynamically from settings, os.environ, or default fallback."""
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT value FROM settings WHERE key = 'firebase_db_url' LIMIT 1")
+        row = c.fetchone()
+        conn.close()
+        if row and row["value"] and str(row["value"]).strip():
+            return str(row["value"]).strip().rstrip("/")
+    except Exception:
+        pass
+    env_url = os.environ.get("FIREBASE_DB_URL", "").strip()
+    if env_url:
+        return env_url.rstrip("/")
+    return FIREBASE_DB_URL
+
 def get_secret():
-    """Retrieves secret from environment, DB settings, or default python secret."""
-    sec = os.environ.get("FIREBASE_DB_SECRET", "").strip()
-    if sec:
-        return sec
+    """Retrieves secret dynamically from DB settings, environment, or default python secret."""
     try:
         conn = get_db()
         c = conn.cursor()
         c.execute("SELECT value FROM settings WHERE key = 'firebase_db_secret' LIMIT 1")
         row = c.fetchone()
         conn.close()
-        if row and row["value"]:
+        if row and row["value"] and str(row["value"]).strip():
             return str(row["value"]).strip()
     except Exception:
         pass
+    sec = os.environ.get("FIREBASE_DB_SECRET", "").strip()
+    if sec:
+        return sec
     return DEFAULT_FIREBASE_SECRET
 
 def get_firebase_url(path="ffglory"):
     clean_path = path.strip("/ ")
-    url = f"{FIREBASE_DB_URL}/{clean_path}.json"
+    base_url = get_db_url()
+    url = f"{base_url}/{clean_path}.json"
     sec = get_secret()
     if sec:
         url += f"?auth={sec}"
     return url
+
+def configure_firebase(db_url, db_secret, init_if_empty=True, current_user=None):
+    """
+    Validates, switches active Firebase connection, and if fresh/empty,
+    automatically seeds admin user accounts and full database structure.
+    """
+    global FIREBASE_DB_URL, DEFAULT_FIREBASE_SECRET, _last_sync_time, _last_sync_status, _last_sync_error
+
+    clean_url = (db_url or "").strip().rstrip("/")
+    # Support pasting full JSON config or raw URL
+    if clean_url.startswith("{") and "databaseURL" in clean_url:
+        try:
+            cfg = json.loads(clean_url)
+            clean_url = (cfg.get("databaseURL") or "").strip().rstrip("/")
+        except Exception:
+            pass
+
+    if clean_url.endswith(".json"):
+        clean_url = clean_url[:-5]
+    if clean_url and not clean_url.startswith("http://") and not clean_url.startswith("https://"):
+        clean_url = "https://" + clean_url
+
+    clean_secret = (db_secret or "").strip()
+
+    if not clean_url:
+        return False, "Firebase Database URL is required (e.g. https://your-db-default-rtdb.firebaseio.com)", {}
+
+    # Test connection to the target Firebase DB
+    test_url = f"{clean_url}/ffglory.json"
+    if clean_secret:
+        test_url += f"?auth={clean_secret}"
+
+    try:
+        r = requests.get(test_url, timeout=12)
+    except Exception as e:
+        return False, f"Failed to connect to Firebase ({clean_url}): {str(e)}", {}
+
+    if r.status_code in (401, 403):
+        return False, f"Firebase Authentication Failed (HTTP {r.status_code}). Invalid Database Secret / Auth Key.", {}
+    if r.status_code != 200:
+        return False, f"Firebase returned HTTP {r.status_code}: {r.text}", {}
+
+    cloud_data = r.json()
+
+    # Save to SQLite settings and update runtime
+    FIREBASE_DB_URL = clean_url
+    DEFAULT_FIREBASE_SECRET = clean_secret
+    os.environ["FIREBASE_DB_URL"] = clean_url
+    os.environ["FIREBASE_DB_SECRET"] = clean_secret
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('firebase_db_url', ?)", (clean_url,))
+    c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('firebase_db_secret', ?)", (clean_secret,))
+    conn.commit()
+    conn.close()
+
+    # Check if database is fresh / empty
+    is_fresh = False
+    if cloud_data is None:
+        is_fresh = True
+    elif not isinstance(cloud_data, dict):
+        is_fresh = True
+    elif "tables" not in cloud_data:
+        is_fresh = True
+    else:
+        users_table = cloud_data.get("tables", {}).get("users")
+        if not users_table or not isinstance(users_table, list) or len(users_table) == 0:
+            is_fresh = True
+
+    action_details = ""
+    user_count = 0
+
+    if is_fresh and init_if_empty:
+        # Build full database structure with initial Admin users
+        from db import hash_password
+        admin_pw = hash_password("admin123")
+
+        conn = get_db()
+        c = conn.cursor()
+
+        # Seed default admin accounts
+        c.execute('''
+            INSERT OR IGNORE INTO users (username, password_hash, role, basic_credits, premium_credits, max_groups)
+            VALUES ('admin', ?, 'admin', 999999, 999999, 999)
+        ''', (admin_pw,))
+        c.execute('''
+            INSERT OR IGNORE INTO users (username, password_hash, role, basic_credits, premium_credits, max_groups)
+            VALUES ('adminrusher', ?, 'admin', 999999, 999999, 999)
+        ''', (admin_pw,))
+
+        # Ensure current admin user stays admin with top credits
+        if current_user and current_user.get("username"):
+            c.execute("UPDATE users SET role='admin', basic_credits=999999, premium_credits=999999 WHERE username=?", (current_user["username"],))
+
+        conn.commit()
+        conn.close()
+
+        # Push the full database schema & tables to the new Firebase cloud DB
+        push_ok, push_err = sync_push_to_firebase()
+        if not push_ok:
+            return False, f"Connected to Firebase but failed to push initial structure: {push_err}", {}
+
+        user_count = 2
+        action_details = "Fresh database detected: automatically created Admin account ('admin' / 'admin123') and deployed complete database structure to Firebase cloud."
+    elif not is_fresh:
+        # Existing database found -> restore cloud snapshot into local SQLite RAM
+        import_json_to_sqlite(cloud_data)
+        user_count = len(cloud_data.get("tables", {}).get("users", []))
+        action_details = f"Existing database detected: restored {user_count} users and all tables into memory."
+
+    _last_sync_time = time.time()
+    _last_sync_status = "Connected"
+    _last_sync_error = None
+
+    return True, f"Firebase connected and active! {action_details}", {
+        "url": clean_url,
+        "is_fresh": is_fresh,
+        "users_count": user_count,
+        "synced_at": _last_sync_time
+    }
 
 def export_sqlite_to_json():
     """Extracts all tables from SQLite as a clean JSON dictionary."""

@@ -2477,7 +2477,8 @@
         if (state.coupons) renderCoupons(state.coupons);
         if (state.redeemed) renderRedeemedCoupons(state.redeemed);
         if (state.history) renderHistory(state.history);
-        if (state.alerts) {
+        const alertIsActive = state.alerts && (state.alerts.active === true || state.alerts.active === 'true' || state.alerts.active === '1' || state.alerts.active === 1);
+        if (alertIsActive && state.alerts.message) {
             renderAlerts(state.alerts);
         } else {
             checkActiveAlert();
@@ -3116,7 +3117,9 @@
     }
 
     function renderAlerts(alert) {
-        if (!alert || !alert.active || !alert.message) return;
+        if (!alert) return;
+        const isActive = (alert.active === true || alert.active === 'true' || alert.active === '1' || alert.active === 1);
+        if (!isActive || !alert.message) return;
         const bTitle = alert.title || '';
         const bMsg = alert.message || '';
 
@@ -3128,6 +3131,7 @@
             if (mMsg) mMsg.textContent = bMsg;
             modal.classList.remove('hidden');
             modal.classList.add('flex');
+            modal.style.display = 'flex';
         }
     }
 
@@ -4423,10 +4427,10 @@
 
     async function checkActiveAlert() {
         try {
-            const res = await fetch(API.alerts);
+            const res = await fetch(API.alerts + '?_t=' + Date.now(), { cache: 'no-store' });
             if (res.ok) {
                 const alertData = await res.json();
-                if (alertData && alertData.active) {
+                if (alertData && (alertData.active === true || alertData.active === 'true' || alertData.active === '1' || alertData.active === 1)) {
                     renderAlerts(alertData);
                 }
             }
@@ -4438,6 +4442,7 @@
         if (modal) {
             modal.classList.add('hidden');
             modal.classList.remove('flex');
+            modal.style.display = 'none';
         }
     }
 
@@ -4468,10 +4473,12 @@
             try {
                 const state = decodePayload(window.__INITIAL_SYNC__);
                 hydrateDashboardState(state);
-                return;
             } catch(e) {}
+        } else {
+            initUserDashboard();
         }
-        initUserDashboard();
+        // Always trigger broadcast check on every page refresh/load
+        checkActiveAlert();
     });
 
     </script>
