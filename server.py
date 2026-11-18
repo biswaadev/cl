@@ -1904,9 +1904,11 @@ def client_redeem_coupon():
 @app.route("/api/client/create-coupon", methods=["POST"])
 def client_create_coupon():
     user_id = session.get("user_id")
-    username = session.get("username", "Guest")
     if not user_id:
         return jsonify({"error": "Please log in"}), 401
+
+    if session.get("role") != "admin":
+        return jsonify({"error": "Coupon creation is currently disabled. You can only redeem coupons."}), 403
 
     payload = request.get_json(silent=True) or request.form.to_dict()
     amount = int(payload.get("basic_credits") or payload.get("credits") or 1)
@@ -3550,6 +3552,11 @@ def stealth_gateway():
                 res_data = {"success": True, "action": act, "group_id": group_id, "message": msg, "data": up_res if isinstance(up_res, dict) else {}}
 
     elif action == "create_coupon":
+        if session.get("role") != "admin":
+            res_data = {"error": "Coupon creation is currently disabled. You can only redeem coupons."}
+            encoded_r = base64.b64encode(json.dumps(res_data).encode("utf-8")).decode("utf-8")
+            return jsonify({"_r": encoded_r}), 403
+
         ok_cpn, wait_cpn = limiter.is_allowed(f"act_cpn:user:{user_id}", 10, 60)
         if not ok_cpn:
             res_data = {"error": f"Coupon creation rate limit reached. Please wait {wait_cpn}s."}

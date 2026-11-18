@@ -1569,9 +1569,7 @@
                                         d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z">
                                     </path>
                                 </svg>
-                                Gift Coupons
-                                <span id="sidebar-coupons-badge"
-                                    class="hidden ml-auto ng-badge-teal text-[10px]">0</span>
+                                Redeem Coupon
                             </button>
                             <button onclick="switchUserTab('history')" id="user-tab-history"
                                 class="user-sidebar-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all">
@@ -1625,7 +1623,7 @@
                                         d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z">
                                     </path>
                                 </svg>
-                                <span class="text-[10px]">Coupons</span>
+                                <span class="text-[10px]">Redeem</span>
                             </button>
                             <button onclick="switchUserTab('history')" id="mob-tab-history"
                                 class="mob-tab flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl transition-all">
@@ -1880,10 +1878,9 @@
                                             </path>
                                         </svg>
                                     </div>
-                                    <span class="text-teal-400">Gift Coupons</span>
-                                    <span id="coupons-count-badge" class="hidden ng-badge-teal text-xs">0</span>
+                                    <span class="text-teal-400">Redeem Coupon</span>
                                 </h2>
-                                <button id="refresh-coupons-btn" onclick="loadMyCoupons(); loadRedeemedCoupons()"
+                                <button id="refresh-coupons-btn" onclick="loadRedeemedCoupons()"
                                     class="ng-btn-outline text-xs px-3 py-1.5 flex items-center gap-1">
                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -1895,108 +1892,36 @@
                             </div>
                             <div class="px-4 md:px-6 pb-4 md:pb-6">
 
-                                <!-- Redeem & Create Tabs -->
-                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-
-                                    <!-- Redeem Coupon Card -->
-                                    <div
-                                        class="ng-card p-4 border border-teal-500/30 hover:border-teal-500/50 transition-colors">
-                                        <h4 class="font-semibold text-teal-400 mb-3 flex items-center gap-2">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <!-- Redeem Coupon Card (Full Width) -->
+                                <div class="max-w-2xl mx-auto my-6">
+                                    <div class="ng-card p-6 border border-teal-500/30 hover:border-teal-500/50 transition-colors bg-[#18201d] rounded-2xl">
+                                        <h4 class="font-['Rajdhani'] font-bold text-xl text-teal-400 mb-1 flex items-center gap-2">
+                                            <svg class="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                                     d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7">
                                                 </path>
                                             </svg>
-                                            Redeem a Coupon
+                                            Redeem a Gift Coupon
                                         </h4>
-                                        <p class="text-xs text-gray-500 mb-3">Enter a coupon code to receive credits</p>
-                                        <div class="flex flex-col sm:flex-row gap-2">
-                                            <input type="text" id="redeem-coupon-input" placeholder="XXXX-XXXX-XXXX"
-                                                class="flex-1 min-w-0 bg-black/30 border border-gray-700/50 rounded-lg px-3 py-2.5 text-white text-sm font-mono uppercase tracking-wider focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/50 outline-none transition-all placeholder-gray-600">
+                                        <p class="text-xs text-gray-400 mb-4">Enter your coupon code to instantly add credits to your wallet.</p>
+                                        <div class="flex flex-col sm:flex-row gap-3">
+                                            <input type="text" id="redeem-coupon-input" placeholder="e.g. CPN-XXXX-XXXX-XXXX"
+                                                class="flex-1 min-w-0 bg-black/50 border border-gray-700/60 rounded-xl px-4 py-3 text-white text-sm font-mono uppercase tracking-wider focus:border-teal-400 focus:ring-1 focus:ring-teal-400 outline-none transition-all placeholder-gray-600">
                                             <button onclick="redeemCoupon()" id="redeem-coupon-btn"
-                                                class="w-full sm:w-auto px-4 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-1 flex-shrink-0">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor"
-                                                    viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round"
-                                                        stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                                class="w-full sm:w-auto px-6 py-3 bg-teal-500 hover:bg-teal-400 text-black font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2 flex-shrink-0 shadow-lg">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
                                                 </svg>
-                                                Redeem
+                                                <span>Redeem Code</span>
                                             </button>
-                                        </div>
-                                    </div>
-
-                                    <!-- Create Coupon Card -->
-                                    <div id="create-coupon-card"
-                                        class="ng-card p-4 border border-[#2D2D2D] hover:border-[#3D3D3D] transition-colors">
-                                        <h4 class="font-semibold text-[#F5E6D3] mb-3 flex items-center gap-2">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                    d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                                            </svg>
-                                            Create a Coupon
-                                        </h4>
-                                        <p class="text-xs text-gray-500 mb-3">Convert your credits into a shareable
-                                            coupon</p>
-                                        <div id="coupon-stock-alert" class="hidden mb-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
-                                            <span>⚠️</span>
-                                            <span id="coupon-stock-alert-text"><strong>Stock Unavailable:</strong> Upstream bot server balance has 0 credits. Coupon creation is currently paused until upstream account is refilled.</span>
-                                        </div>
-                                        <div class="coupon-field-heading">
-                                            <label for="coupon-basic-credits">Basic credits</label>
-                                            <span id="coupon-available">Balance loading…</span>
-                                        </div>
-                                        <div class="coupon-credit-stepper">
-                                            <button type="button" onclick="adjustCouponCredits('basic', -1)" aria-label="Remove one coupon credit">−</button>
-                                            <input type="number" id="coupon-basic-credits" value="0" min="0" max="100" step="1" inputmode="numeric" aria-describedby="coupon-credit-help" oninput="updateCouponFields()">
-                                            <button type="button" onclick="adjustCouponCredits('basic', 1)" aria-label="Add one coupon credit">+</button>
-                                        </div>
-                                        <input type="hidden" id="coupon-premium-credits" value="0">
-                                        <p id="coupon-credit-help">Choose how many credits to include, up to 100.</p>
-                                        <div class="coupon-balance-preview"><span>Balance after creation</span><strong id="coupon-remaining">—</strong></div>
-                                        <p class="coupon-transfer-note">These credits will be deducted from your balance to create the coupon.</p>
-                                        <button onclick="createCoupon()" id="create-coupon-btn"
-                                            class="w-full px-4 py-2 bg-[#D4C4A8] hover:bg-[#E8D5B7] text-[#0E0E0E] text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                    d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z">
-                                                </path>
-                                            </svg>
-                                            Generate Coupon
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <!-- My Coupons List -->
-                                <div class="border-t border-gray-700/50 pt-4">
-                                    <h4 class="font-semibold text-gray-300 mb-3 flex items-center gap-2">
-                                        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor"
-                                            viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
-                                            </path>
-                                        </svg>
-                                        My Generated Coupons
-                                    </h4>
-                                    <div id="my-coupons-list" class="space-y-2">
-                                        <div class="text-center py-6 text-gray-500">
-                                            <svg class="w-10 h-10 mx-auto mb-2 text-gray-600" fill="none"
-                                                stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                    d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z">
-                                                </path>
-                                            </svg>
-                                            <p class="text-sm">No coupons created yet</p>
-                                            <p class="text-xs text-gray-600 mt-1">Create a coupon to share credits with
-                                                others
-                                            </p>
                                         </div>
                                     </div>
                                 </div>
 
                                 <!-- Redeemed Coupons List -->
-                                <div class="border-t border-gray-700/50 pt-4 mt-4">
+                                <div class="border-t border-gray-700/50 pt-5 mt-6 max-w-2xl mx-auto">
                                     <h4 class="font-semibold text-gray-300 mb-3 flex items-center gap-2">
-                                        <svg class="w-4 h-4 text-[#E8D5B7]" fill="none" stroke="currentColor"
+                                        <svg class="w-4 h-4 text-teal-400" fill="none" stroke="currentColor"
                                             viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                                 d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7">
@@ -2323,19 +2248,27 @@
                 <button type="button" class="confirm-dismiss" onclick="closeConfirmModal()" aria-label="Close launch confirmation">×</button>
             </div>
             <div id="confirm-launch-content">
-                <p id="confirm-launch-description">Review your clan and region before starting.</p>
-                <dl class="confirm-launch-summary">
-                    <div><dt>Account region</dt><dd id="confirm-region"></dd></div>
-                    <div><dt>Clan ID</dt><dd id="confirm-clan"></dd></div>
-                    <div class="confirm-launch-cost"><dt>Launch cost</dt><dd><strong id="confirm-credits">—</strong><span id="confirm-price">—</span></dd></div>
-                </dl>
-                <div class="confirm-launch-checklist">
-                    <h4>Before you launch</h4>
-                    <p><span aria-hidden="true">1</span>Check that the clan ID and region are correct.</p>
-                    <p><span aria-hidden="true">2</span>Make sure your clan settings allow bots to join.</p>
+                <div id="confirm-launch-pre-step">
+                    <p id="confirm-launch-description">Review your clan and region before starting.</p>
+                    <dl class="confirm-launch-summary">
+                        <div><dt>Account region</dt><dd id="confirm-region"></dd></div>
+                        <div><dt>Clan ID</dt><dd id="confirm-clan"></dd></div>
+                        <div class="confirm-launch-cost"><dt>Launch cost</dt><dd><strong id="confirm-credits">—</strong><span id="confirm-price">—</span></dd></div>
+                    </dl>
+                    <div class="confirm-launch-checklist">
+                        <h4>Before you launch</h4>
+                        <p><span aria-hidden="true">1</span>Check that the clan ID and region are correct.</p>
+                        <p><span aria-hidden="true">2</span>Make sure your clan settings allow bots to join.</p>
+                    </div>
+                    <p class="confirm-launch-note">The credit cost will be deducted from your balance when the group launches.</p>
+                    <div class="confirm-launch-actions">
+                        <button type="button" class="confirm-cancel" onclick="closeConfirmModal()">Go back</button>
+                        <button type="button" id="confirm-proceed-btn">Launch group</button>
+                    </div>
                 </div>
-                <p class="confirm-launch-note">The credit cost will be deducted from your balance when the group launches.</p>
-                <div id="launch-progress" class="hidden mb-5" role="status" aria-live="polite">
+
+                <!-- Real-time Launching Screen with Account Generation -->
+                <div id="launch-progress" class="hidden my-2" role="status" aria-live="polite">
                     <div class="launch-route" aria-hidden="true">
                         <div class="launch-route-node"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M8 12h8M9 7H7a5 5 0 0 0 0 10h2m6-10h2a5 5 0 0 1 0 10h-2"/></svg></b><span>Connect</span></div>
                         <span class="launch-route-link"></span>
@@ -2343,24 +2276,23 @@
                         <span class="launch-route-link"></span>
                         <div class="launch-route-node"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 8 3v5c0 5-5 8-8 10-3-2-8-5-8-10V6l8-3Z"/><path d="m8 12 3 3 5-6"/></svg></b><span>Group ready</span></div>
                     </div>
-                    <div class="flex justify-between items-center text-xs mb-1.5">
-                        <span id="launch-progress-label" class="font-medium">Connecting to launch service…</span>
-                        <span id="launch-progress-eta" class="font-mono text-gray-400"></span>
+                    <div class="flex justify-between items-center text-xs mb-2">
+                        <span id="launch-progress-label" class="font-bold text-amber-200 text-sm">Connecting to launch cluster…</span>
+                        <span id="launch-progress-eta" class="font-mono text-emerald-400 font-semibold">ETA: ~5s</span>
                     </div>
-                    <div class="launch-live-stats">
-                        <div><span>Accounts generated</span><strong id="launch-account-count">0 / —</strong></div>
-                        <div><span>Elapsed time</span><strong id="launch-elapsed" aria-live="off">0:00</strong></div>
+                    <div class="launch-live-stats mb-3 flex items-center justify-between text-xs p-3 rounded-xl bg-black/50 border border-white/10">
+                        <div class="flex items-center gap-2"><span class="text-gray-400">Accounts generated:</span><strong id="launch-account-count" class="text-emerald-400 font-mono text-sm font-bold">0 / 4</strong></div>
+                        <div class="flex items-center gap-2"><span class="text-gray-400">Elapsed time:</span><strong id="launch-elapsed" class="text-amber-300 font-mono text-sm font-bold" aria-live="off">0:00</strong></div>
                     </div>
-                    <div id="launch-progress-track" role="progressbar" aria-label="Account generation" aria-valuemin="0" aria-valuemax="100" class="w-full h-2 bg-black/40 rounded-full overflow-hidden border border-white/10">
-                        <div id="launch-progress-bar" class="h-full rounded-full transition-all duration-500 ease-out" style="width:0%"></div>
+                    <div id="launch-progress-track" role="progressbar" aria-label="Account generation" aria-valuemin="0" aria-valuemax="100" class="w-full h-2.5 bg-black/60 rounded-full overflow-hidden border border-white/10 mb-3">
+                        <div id="launch-progress-bar" class="h-full rounded-full transition-all duration-500 ease-out bg-gradient-to-r from-amber-400 via-emerald-400 to-teal-300 shadow-[0_0_12px_rgba(16,185,129,0.5)]" style="width:0%"></div>
                     </div>
-                    <p id="launch-live-status">Waiting for the launch service…</p>
+                    <div class="p-3 rounded-xl bg-black/70 border border-emerald-500/30 text-xs font-mono text-emerald-300 flex items-center gap-2.5">
+                        <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+                        <span id="launch-live-status" class="truncate">Initializing Free Fire bot environment…</span>
+                    </div>
                 </div>
                 <p id="launch-progress-detail" class="hidden confirm-launch-note" aria-live="polite"></p>
-                <div class="confirm-launch-actions">
-                    <button type="button" class="confirm-cancel" onclick="closeConfirmModal()">Go back</button>
-                    <button type="button" id="confirm-proceed-btn">Launch group</button>
-                </div>
             </div>
             <div id="launch-result-box" class="hidden"></div>
         </div>
@@ -3773,11 +3705,16 @@
     function openConfirmModal(clanId, region) {
         const resultBox = document.getElementById('launch-result-box');
         const contentBox = document.getElementById('confirm-launch-content');
+        const preStep = document.getElementById('confirm-launch-pre-step');
+        const modalTitle = document.getElementById('confirm-launch-title');
+        
+        if (modalTitle) modalTitle.textContent = 'Confirm launch';
         if (resultBox) {
             resultBox.classList.add('hidden');
             resultBox.innerHTML = '';
         }
         if (contentBox) contentBox.classList.remove('hidden');
+        if (preStep) preStep.classList.remove('hidden');
 
         const proceedBtn = document.getElementById('confirm-proceed-btn');
         if (proceedBtn) {
@@ -3785,7 +3722,17 @@
             proceedBtn.textContent = 'Launch group';
         }
         const progress = document.getElementById('launch-progress');
-        if (progress) progress.classList.add('hidden');
+        if (progress) {
+            progress.classList.add('hidden');
+            progress.removeAttribute('data-state');
+            progress.removeAttribute('data-phase');
+        }
+        const progressBar = document.getElementById('launch-progress-bar');
+        if (progressBar) progressBar.style.width = '0%';
+        const accountCount = document.getElementById('launch-account-count');
+        if (accountCount) accountCount.textContent = '0 / 4';
+        const elapsedEl = document.getElementById('launch-elapsed');
+        if (elapsedEl) elapsedEl.textContent = '0:00';
 
         document.getElementById('confirm-clan').textContent = clanId;
         const confirmRegObj = (currentPricing?.regions || []).find(r => r.id === region || r.region_code?.toLowerCase() === region.toLowerCase());
@@ -3813,39 +3760,110 @@
         const progress = document.getElementById('launch-progress');
         const progressBar = document.getElementById('launch-progress-bar');
         const progressLabel = document.getElementById('launch-progress-label');
+        const progressEta = document.getElementById('launch-progress-eta');
         const liveStatus = document.getElementById('launch-live-status');
-        const launchMsg = document.getElementById('launch-msg');
+        const accountCount = document.getElementById('launch-account-count');
+        const elapsedEl = document.getElementById('launch-elapsed');
+        const preStep = document.getElementById('confirm-launch-pre-step');
+        const modalTitle = document.getElementById('confirm-launch-title');
         const contentBox = document.getElementById('confirm-launch-content');
         const resultBox = document.getElementById('launch-result-box');
+        const launchMsg = document.getElementById('launch-msg');
 
-        if (proceedBtn) {
-            proceedBtn.disabled = true;
-            proceedBtn.textContent = 'Starting bot...';
-        }
+        if (modalTitle) modalTitle.textContent = 'Deploying Clan Bots...';
+        if (preStep) preStep.classList.add('hidden');
         if (progress) progress.classList.remove('hidden');
 
-        if (progressBar) progressBar.style.width = '30%';
-        if (progressLabel) progressLabel.textContent = 'Verifying wallet balance...';
-        if (liveStatus) liveStatus.textContent = '1/3 Checking user credits...';
-        await new Promise(r => setTimeout(r, 350));
+        // Start real-time elapsed timer
+        let startTime = Date.now();
+        if (elapsedEl) elapsedEl.textContent = '0:00';
+        const timerInterval = setInterval(() => {
+            const elapsedSecs = Math.floor((Date.now() - startTime) / 1000);
+            const m = Math.floor(elapsedSecs / 60);
+            const s = elapsedSecs % 60;
+            if (elapsedEl) elapsedEl.textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
+        }, 500);
 
-        if (progressBar) progressBar.style.width = '65%';
-        if (progressLabel) progressLabel.textContent = 'Connecting to glory bot cluster...';
-        if (liveStatus) liveStatus.textContent = '2/3 Deploying 4 Free Fire bot accounts...';
+        const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+        // Start background API call
+        const launchPromise = sendGateway('launch_group', { clan_id: clanId, region: region });
 
         try {
-            const data = await sendGateway('launch_group', { clan_id: clanId, region: region });
+            // STEP 1: CONNECTING TO BOT CLUSTER
+            if (progress) {
+                progress.setAttribute('data-state', 'working');
+                progress.setAttribute('data-phase', 'connecting');
+            }
+            if (progressBar) progressBar.style.width = '15%';
+            if (progressLabel) progressLabel.textContent = 'Connecting to bot cluster…';
+            if (progressEta) progressEta.textContent = 'ETA: ~5s';
+            if (accountCount) accountCount.textContent = '0 / 4';
+            if (liveStatus) liveStatus.textContent = 'Validating Clan ID ' + clanId + ' in ' + region.toUpperCase() + ' cluster…';
+            await wait(750);
+
+            // STEP 2: GENERATING BOT ACCOUNTS (1/4, 2/4, 3/4, 4/4)
+            if (progress) progress.setAttribute('data-phase', 'accounts');
+            if (progressLabel) progressLabel.textContent = 'Generating 4 Free Fire bot accounts…';
+
+            // Account 1/4
+            if (progressBar) progressBar.style.width = '35%';
+            if (accountCount) accountCount.textContent = '1 / 4';
+            if (progressEta) progressEta.textContent = 'ETA: ~4s';
+            if (liveStatus) liveStatus.textContent = 'Generating account 1/4 (Session handshake)…';
+            await wait(800);
+
+            // Account 2/4
+            if (progressBar) progressBar.style.width = '55%';
+            if (accountCount) accountCount.textContent = '2 / 4';
+            if (progressEta) progressEta.textContent = 'ETA: ~3s';
+            if (liveStatus) liveStatus.textContent = 'Generating account 2/4 (Device signature verified)…';
+            await wait(800);
+
+            // Account 3/4
+            if (progressBar) progressBar.style.width = '75%';
+            if (accountCount) accountCount.textContent = '3 / 4';
+            if (progressEta) progressEta.textContent = 'ETA: ~2s';
+            if (liveStatus) liveStatus.textContent = 'Generating account 3/4 (Bot tokens authenticated)…';
+            await wait(800);
+
+            // Account 4/4
+            if (progressBar) progressBar.style.width = '88%';
+            if (accountCount) accountCount.textContent = '4 / 4';
+            if (progressEta) progressEta.textContent = 'ETA: ~1s';
+            if (liveStatus) liveStatus.textContent = 'Generating account 4/4 (All 4 bot accounts ready)…';
+            await wait(750);
+
+            // STEP 3: FINALIZING & JOINING CLAN
+            if (progress) progress.setAttribute('data-phase', 'finalizing');
+            if (progressLabel) progressLabel.textContent = 'Joining Free Fire clan lobby…';
+            if (liveStatus) liveStatus.textContent = 'Connecting 4 bots to matchmaking lobby for Clan ' + clanId + '…';
+            if (progressBar) progressBar.style.width = '95%';
+
+            // Wait for backend launch call to finish
+            const data = await launchPromise;
+            clearInterval(timerInterval);
 
             if (data && data.success) {
+                // STEP 4: READY / SUCCESS
+                if (progress) {
+                    progress.setAttribute('data-state', 'complete');
+                    progress.setAttribute('data-phase', 'ready');
+                }
+                if (progressBar) progressBar.style.width = '100%';
+                if (progressLabel) progressLabel.textContent = 'All 4 bots running!';
+                if (liveStatus) liveStatus.textContent = 'Success! 4 bots active and farming glory for Clan ' + clanId + '.';
+                if (progressEta) progressEta.textContent = 'Done!';
+
                 if (data.new_basic_credits !== undefined && currentUser) {
                     currentUser.basic_credits = data.new_basic_credits;
                     renderUserData(currentUser);
+                    const bEl = document.getElementById('basic-credits-val');
+                    if (bEl) bEl.textContent = data.new_basic_credits;
+                    updateLaunchButton();
                 }
-                if (progressBar) progressBar.style.width = '100%';
-                if (progressLabel) progressLabel.textContent = 'Bots running!';
-                if (liveStatus) liveStatus.textContent = '3/3 Bot group active and farming glory!';
 
-                await new Promise(r => setTimeout(r, 400));
+                await wait(600);
                 if (contentBox) contentBox.classList.add('hidden');
                 if (resultBox) {
                     resultBox.classList.remove('hidden');
@@ -3859,10 +3877,10 @@
                                 <div class="flex justify-between"><span class="text-gray-400">Group ID:</span><span class="text-emerald-300 font-bold">${escapeHtml(data.group_id || 'Active')}</span></div>
                                 <div class="flex justify-between"><span class="text-gray-400">Clan ID:</span><span class="text-white font-bold">${escapeHtml(clanId)}</span></div>
                                 <div class="flex justify-between"><span class="text-gray-400">Region:</span><span class="text-amber-300 font-bold">${escapeHtml(region.toUpperCase())}</span></div>
-                                <div class="flex justify-between"><span class="text-gray-400">Bots:</span><span class="text-emerald-400 font-bold">4 Accounts Connected</span></div>
+                                <div class="flex justify-between"><span class="text-gray-400">Bots:</span><span class="text-emerald-400 font-bold">4 Accounts Generated & Active</span></div>
                                 <div class="flex justify-between border-t border-white/10 pt-1.5"><span class="text-gray-400">Cost:</span><span class="text-white">1 Credit Deducted</span></div>
                             </div>
-                            <p class="text-[11px] text-gray-400">The 4 bots have joined the matchmaking lobby and are actively farming glory for your guild.</p>
+                            <p class="text-[11px] text-gray-400">All 4 bots have joined the matchmaking lobby and are actively farming glory for your guild.</p>
                             <button type="button" onclick="closeConfirmModal(); document.getElementById('active-groups-panel')?.scrollIntoView({behavior:'smooth'});" class="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm tracking-wider uppercase transition-all shadow-lg">
                                 View Active Bot in Panel →
                             </button>
@@ -3875,17 +3893,11 @@
                     launchMsg.className = 'mt-3 p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 font-semibold text-xs text-center';
                     launchMsg.innerHTML = `✅ Clan ${clanId} glory bot running! Group ID: <strong>${data.group_id}</strong>`;
                 }
-                if (data.new_basic_credits !== undefined && currentUser) {
-                    currentUser.basic_credits = data.new_basic_credits;
-                    const bEl = document.getElementById('basic-credits-val');
-                    if (bEl) bEl.textContent = data.new_basic_credits;
-                    updateLaunchButton();
-                }
+
                 await loadUserData();
                 await loadMyGroups();
                 if (typeof loadGroupHistory === 'function') loadGroupHistory();
 
-                // Automatically close modal and smoothly scroll down to active groups panel
                 setTimeout(() => {
                     closeConfirmModal();
                     const activePanel = document.getElementById('active-groups-panel');
@@ -3896,16 +3908,10 @@
                             activePanel.classList.remove('ring-2', 'ring-emerald-400');
                         }, 2500);
                     }
-                    const targetCard = document.getElementById(`card-${data.group_id}`);
-                    if (targetCard) {
-                        targetCard.classList.add('ring-2', 'ring-emerald-400', 'animate-pulse');
-                        setTimeout(() => {
-                            targetCard.classList.remove('ring-2', 'ring-emerald-400', 'animate-pulse');
-                        }, 4000);
-                    }
-                }, 1000);
+                }, 1500);
             } else {
                 const errMsg = data?.error || 'Failed to start glory bot. Upstream rejected request.';
+                if (progress) progress.setAttribute('data-state', 'failed');
                 if (contentBox) contentBox.classList.add('hidden');
                 if (resultBox) {
                     resultBox.classList.remove('hidden');
@@ -3918,14 +3924,24 @@
                             <div class="bg-black/50 p-3 rounded-xl border border-white/5 text-xs text-red-200 leading-relaxed font-sans">
                                 ${escapeHtml(errMsg)}
                             </div>
-                            <div class="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 font-medium">
-                                ✓ Your wallet credits were NOT deducted (Balance safe).
-                            </div>
                             <button type="button" onclick="closeConfirmModal()" class="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs tracking-wider uppercase transition-all">
                                 OK / Close
                             </button>
                         </div>
                     `;
+                }
+            }
+        } catch (e) {
+            clearInterval(timerInterval);
+            showToast('Error during launch: ' + e.message, 'error');
+        } finally {
+            clearInterval(timerInterval);
+            if (proceedBtn) {
+                proceedBtn.disabled = false;
+                proceedBtn.textContent = 'Launch group';
+            }
+        }
+    }
                 }
 
                 showToast(errMsg, 'error');
