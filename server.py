@@ -1727,7 +1727,9 @@ def client_famgateway_create_order():
                 "api_key": api_key,
                 "amount": total_inr,
                 "customer_name": username,
-                "redirect_url": request.host_url.rstrip("/") + "/#transactions"
+                "redirect_url": request.host_url.rstrip("/") + "/#transactions",
+                "validity": 10,
+                "expiry_minutes": 10
             }
             res = requests.post(f"{base_url}/api/create-order", json=req_body, headers={"Content-Type": "application/json"}, timeout=8)
             if res.status_code == 200:
@@ -1784,7 +1786,9 @@ def client_famgateway_create_order():
         "gateway_connected": gateway_connected,
         "gateway_msg": gateway_msg,
         "created_at_ist": created_at_ist,
-        "expires_at_ist": expires_at_ist
+        "expires_at_ist": expires_at_ist,
+        "validity_minutes": 10,
+        "validity_seconds": 600
     })
 
 @app.route("/api/client/famgateway/verify-order", methods=["POST"])
@@ -2646,7 +2650,7 @@ def admin_pending_orders():
 
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT * FROM transactions ORDER BY created_at DESC LIMIT 100")
+    c.execute("SELECT * FROM transactions WHERE status IN ('approved', 'success', 'completed') ORDER BY created_at DESC LIMIT 100")
     rows = c.fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])

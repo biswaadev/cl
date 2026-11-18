@@ -1747,20 +1747,34 @@
 
                                         <!-- Centered QR & Checkout Box -->
                                         <div class="p-5 rounded-2xl bg-black/50 border border-emerald-500/30 space-y-5 text-center mt-4">
-                                            <!-- Payable Amount Badge -->
-                                            <div class="inline-flex flex-col items-center justify-center px-6 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                                                <span class="text-[10px] text-emerald-400/80 uppercase font-semibold tracking-wider">Payable Amount</span>
-                                                <span class="text-3xl font-['Rajdhani'] font-bold text-emerald-300">₹<span id="fg-display-amount">600</span> <small class="text-xs text-gray-400 font-sans">INR</small></span>
+                                            <!-- Payable Amount Badge & Validity Timer -->
+                                            <div class="flex items-center justify-center gap-3 flex-wrap">
+                                                <div class="inline-flex flex-col items-center justify-center px-6 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                                                    <span class="text-[10px] text-emerald-400/80 uppercase font-semibold tracking-wider">Payable Amount</span>
+                                                    <span class="text-3xl font-['Rajdhani'] font-bold text-emerald-300">₹<span id="fg-display-amount">600</span> <small class="text-xs text-gray-400 font-sans">INR</small></span>
+                                                </div>
+                                                <div id="fg-qr-timer-box" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
+                                                    <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                                                    <span>QR Validity: <strong id="fg-qr-timer" class="font-mono text-white text-sm">10:00</strong> mins</span>
+                                                </div>
                                             </div>
 
-                                            <!-- Centered High-Res QR Code Card -->
+                                            <!-- Centered High-Res QR Code Card with Expiry Overlay -->
                                             <div class="flex flex-col items-center justify-center">
-                                                <div class="p-3 bg-white rounded-2xl shadow-2xl border-2 border-emerald-500/40 inline-block">
+                                                <div class="p-3 bg-white rounded-2xl shadow-2xl border-2 border-emerald-500/40 inline-block relative overflow-hidden" id="fg-qr-wrap">
                                                     <img id="fg-qr-img" src="" width="160" height="160" alt="UPI QR Code" class="rounded-xl object-contain mx-auto block">
+                                                    <div id="fg-qr-expired-overlay" class="hidden absolute inset-0 bg-black/90 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center p-3 text-center z-10">
+                                                        <span class="text-2xl mb-1">⏳</span>
+                                                        <span class="text-xs font-bold text-red-400">QR Expired</span>
+                                                        <span class="text-[10px] text-gray-300 mt-0.5">10-min validity ended</span>
+                                                        <button type="button" onclick="generateFamGatewayOrder()" class="mt-2.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-lg transition-all cursor-pointer">
+                                                            🔄 Generate New QR
+                                                        </button>
+                                                    </div>
                                                 </div>
                                                 <p class="text-[11px] text-gray-400 mt-2.5 flex items-center justify-center gap-1.5 font-medium">
                                                     <svg class="w-3.5 h-3.5 text-emerald-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-                                                    Point phone camera or any UPI app to scan
+                                                    Point phone camera or any UPI app to scan (Valid for 10 minutes)
                                                 </p>
                                             </div>
 
@@ -3668,7 +3682,8 @@
                 }
 
                 startFamGatewayPolling(data.order_id);
-                showToast(`FamGateway Order created for ₹${data.amount_inr}!`, 'success');
+                startQrCountdown(600); // 10 minutes QR validity
+                showToast(`FamGateway Order created for ₹${data.amount_inr}! (Valid 10 mins)`, 'success');
 
                 stepSec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             } else {
@@ -3684,6 +3699,48 @@
         }
     }
 
+    let famgatewayTimerInterval = null;
+    let famgatewaySecondsLeft = 600; // 10 minutes
+
+    function startQrCountdown(seconds = 600) {
+        if (famgatewayTimerInterval) clearInterval(famgatewayTimerInterval);
+        famgatewaySecondsLeft = seconds;
+
+        const timerEl = document.getElementById('fg-qr-timer');
+        const overlay = document.getElementById('fg-qr-expired-overlay');
+        const timerBox = document.getElementById('fg-qr-timer-box');
+        if (overlay) overlay.classList.add('hidden');
+        if (timerBox) timerBox.className = 'inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold';
+
+        const updateDisplay = () => {
+            const m = Math.floor(famgatewaySecondsLeft / 60);
+            const s = famgatewaySecondsLeft % 60;
+            if (timerEl) {
+                timerEl.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            }
+        };
+        updateDisplay();
+
+        famgatewayTimerInterval = setInterval(() => {
+            famgatewaySecondsLeft--;
+            if (famgatewaySecondsLeft <= 0) {
+                clearInterval(famgatewayTimerInterval);
+                famgatewayTimerInterval = null;
+                if (famgatewayPollInterval) {
+                    clearInterval(famgatewayPollInterval);
+                    famgatewayPollInterval = null;
+                }
+                if (timerEl) timerEl.textContent = '00:00';
+                if (overlay) overlay.classList.remove('hidden');
+                if (timerBox) timerBox.className = 'inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-red-500/15 border border-red-500/40 text-red-400 text-xs font-semibold';
+                const pollText = document.getElementById('fg-polling-text');
+                if (pollText) pollText.textContent = '⚠️ QR code expired after 10 mins. Click "Generate New QR" to continue.';
+            } else {
+                updateDisplay();
+            }
+        }, 1000);
+    }
+
     function startFamGatewayPolling(orderId) {
         if (famgatewayPollInterval) clearInterval(famgatewayPollInterval);
 
@@ -3695,6 +3752,10 @@
                 if (data.paid || data.status === 'success') {
                     clearInterval(famgatewayPollInterval);
                     famgatewayPollInterval = null;
+                    if (famgatewayTimerInterval) {
+                        clearInterval(famgatewayTimerInterval);
+                        famgatewayTimerInterval = null;
+                    }
 
                     const pollBox = document.getElementById('fg-polling-box');
                     const pollText = document.getElementById('fg-polling-text');
