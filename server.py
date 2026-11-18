@@ -991,7 +991,7 @@ def get_user_dashboard_state(user_id):
     }
 
     alerts = {
-        "active": True,
+        "active": (get_setting("broadcast_active", "0") == "1"),
         "title": get_setting("broadcast_title", "Glory Boost Active"),
         "message": get_setting("broadcast_message", "All server nodes are functioning normally across all regions.")
     }
@@ -3017,11 +3017,16 @@ def admin_broadcast():
         return jsonify({"error": "Access denied"}), 403
 
     data = request.get_json(silent=True) or request.form.to_dict()
-    set_setting("broadcast_active", "1" if data.get("active") else "0")
-    set_setting("broadcast_title", data.get("title", ""))
-    set_setting("broadcast_message", data.get("message", ""))
+    is_active = "1" if (data.get("active") is True or str(data.get("active")).lower() in ("true", "1", "on")) else "0"
+    set_setting("broadcast_active", is_active)
+    set_setting("broadcast_title", (data.get("title") or "").strip())
+    set_setting("broadcast_message", (data.get("message") or "").strip())
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
 
-    return jsonify({"success": True, "message": "Broadcast alert saved and active."})
+    return jsonify({"success": True, "message": "Broadcast alert saved and active.", "active": is_active == "1"})
 
 # ==================== ADMIN SERVER & REGION MANAGEMENT ENDPOINTS ====================
 
