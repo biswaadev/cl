@@ -1653,27 +1653,6 @@
                         <!-- === DASHBOARD TAB (default) === -->
                         <div id="user-section-dashboard" class="user-section space-y-6 md:space-y-8">
 
-                            <!-- Global Broadcast Announcement Banner -->
-                            <div id="broadcast-banner" class="hidden p-4 md:p-5 rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/70 via-[#1f1a14] to-black/90 shadow-2xl relative overflow-hidden backdrop-blur-md transition-all duration-300">
-                                <div class="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-transparent to-transparent pointer-events-none"></div>
-                                <div class="flex items-start gap-3.5 relative z-10">
-                                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-xl shrink-0 shadow-inner">
-                                        📢
-                                    </div>
-                                    <div class="flex-1 min-w-0 pr-2">
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">Official Announcement</span>
-                                            <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
-                                        </div>
-                                        <h4 id="broadcast-banner-title" class="font-['Rajdhani'] font-bold text-lg text-white leading-tight">Glory Notice</h4>
-                                        <p id="broadcast-banner-msg" class="text-xs text-gray-300 mt-1 whitespace-pre-wrap leading-relaxed font-sans"></p>
-                                    </div>
-                                    <button type="button" onclick="dismissBroadcastBanner()" class="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors shrink-0" title="Close announcement">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                                    </button>
-                                </div>
-                            </div>
-
                             <!-- Buy Credits Section (Collapsible) -->
                             <div class="ng-card relative group overflow-visible"
                                 style="padding-bottom: 0px;margin-bottom: 10px;">
@@ -2424,21 +2403,20 @@
     <!-- Client Alert Modal -->
     <div id="client-alert-modal"
         class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 backdrop-blur-md p-4">
-        <div class="ng-card p-5 md:p-6 max-w-md w-full transform transition-all scale-100 modal-slide-up"
+        <div class="ng-card p-6 md:p-8 max-w-md w-full transform transition-all scale-100 modal-slide-up border border-amber-500/40 bg-gradient-to-b from-[#221c16] to-[#121110] shadow-2xl relative"
             id="client-alert-card">
+            <button type="button" onclick="dismissClientAlert()" class="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors" title="Close">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
             <!-- Alert Icon -->
             <div class="flex justify-center mb-4">
-                <div id="client-alert-icon" class="w-14 h-14 rounded-full flex items-center justify-center">
-                    <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9">
-                        </path>
-                    </svg>
+                <div id="client-alert-icon" class="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-3xl shadow-lg shadow-amber-950/40">
+                    📢
                 </div>
             </div>
-            <h3 class="text-lg font-bold text-white text-center mb-2" id="client-alert-title"></h3>
-            <p class="text-sm text-gray-300 text-center mb-6 whitespace-pre-wrap" id="client-alert-message"></p>
-            <button onclick="dismissClientAlert()" class="w-full py-3 rounded-xl font-semibold text-sm transition-all"
+            <h3 class="text-xl font-bold font-['Rajdhani'] text-amber-300 text-center mb-2 tracking-wide uppercase" id="client-alert-title">Official Announcement</h3>
+            <p class="text-sm text-gray-300 text-center mb-6 whitespace-pre-wrap leading-relaxed font-sans" id="client-alert-message"></p>
+            <button onclick="dismissClientAlert()" class="w-full py-3.5 rounded-xl font-bold text-sm transition-all bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black shadow-lg shadow-amber-950/40 cursor-pointer"
                 id="client-alert-dismiss-btn">
                 OK, Got it
             </button>
@@ -3136,35 +3114,12 @@
         `).join('');
     }
 
-    function dismissBroadcastBanner() {
-        const banner = document.getElementById('broadcast-banner');
-        if (banner) banner.classList.add('hidden');
-        const title = document.getElementById('broadcast-banner-title')?.textContent || '';
-        sessionStorage.setItem('dismissed_banner_' + title, 'true');
-    }
-
     function renderAlerts(alert) {
-        const banner = document.getElementById('broadcast-banner');
-        if (!alert || !alert.active || !alert.message) {
-            if (banner) banner.classList.add('hidden');
-            return;
-        }
+        if (!alert || !alert.active || !alert.message) return;
         const bTitle = alert.title || 'Official Announcement';
         const bMsg = alert.message || '';
 
-        // 1. Render Top Banner
-        if (banner) {
-            const isBannerDismissed = sessionStorage.getItem('dismissed_banner_' + bTitle);
-            if (!isBannerDismissed) {
-                banner.classList.remove('hidden');
-                const titleEl = document.getElementById('broadcast-banner-title');
-                const msgEl = document.getElementById('broadcast-banner-msg');
-                if (titleEl) titleEl.textContent = bTitle;
-                if (msgEl) msgEl.textContent = bMsg;
-            }
-        }
-
-        // 2. Render Modal Popup (once per session per title)
+        // Render Modal Popup (once per session per title)
         const isModalDismissed = sessionStorage.getItem('dismissed_alert_' + bTitle);
         if (!isModalDismissed) {
             const modal = document.getElementById('client-alert-modal');
