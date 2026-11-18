@@ -2778,10 +2778,11 @@
                             const glory = g.glory_gained || 0;
                             const uptime = g.uptime || 'Active';
 
+                            // Strictly separate: Only ffglory.in special squad is 30min, all ffglory.pro groups remain 8h Goal!
                             const isSafeSquad = (g.provider === 'ffglory_safe') || 
                                                 (g.region === 'IN_SAFE' || g.region === 'in_safe') ||
-                                                (g.region === 'IN' && (String(gid).length < 12 || String(gid).includes('-') || String(gid).startsWith('SAFE-'))) ||
-                                                (currentPricing?.active_provider === 'ffglory_safe');
+                                                (String(gid).startsWith('SAFE-')) ||
+                                                (g.provider !== 'ffglory_pro' && (String(gid).includes('-') || (g.region === 'IN' && String(gid).length < 10)));
 
                             const goalLabel = isSafeSquad ? '30min Goal' : '8h Goal';
 
