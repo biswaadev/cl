@@ -2480,6 +2480,12 @@
         const state = await sendGateway('refresh');
         if (state && !state.error) {
             hydrateDashboardState(state);
+        } else {
+            const loader = document.getElementById('initial-loader');
+            if (loader) loader.classList.add('hidden');
+            const dash = document.getElementById('dashboard-screen');
+            if (dash) dash.classList.remove('hidden');
+            if (state && state.error) showToast(state.error, 'error');
         }
     }
 
@@ -3936,24 +3942,6 @@
             showToast('Error during launch: ' + e.message, 'error');
         } finally {
             clearInterval(timerInterval);
-            if (proceedBtn) {
-                proceedBtn.disabled = false;
-                proceedBtn.textContent = 'Launch group';
-            }
-        }
-    }
-                }
-
-                showToast(errMsg, 'error');
-                if (launchMsg) {
-                    launchMsg.className = 'mt-3 p-3.5 rounded-xl bg-red-500/15 border border-red-500/40 text-red-400 text-xs text-center font-bold space-y-1';
-                    launchMsg.innerHTML = `<span>⚠️ ${escapeHtml(errMsg)}</span><br><span class="text-[11px] text-gray-400 font-normal">Credits were not deducted.</span>`;
-                }
-            }
-        } catch (e) {
-            showToast('Error communicating with cluster', 'error');
-            closeConfirmModal();
-        } finally {
             if (proceedBtn) {
                 proceedBtn.disabled = false;
                 proceedBtn.textContent = 'Launch group';
