@@ -242,7 +242,7 @@ def mask_secret(key, visible_start=4, visible_end=4):
         return "••••••••"
     return key[:visible_start] + "••••••••" + key[-visible_end:]
 
-def call_upstream(method, path, json_data=None, params=None):
+def call_upstream(method, path, json_data=None, params=None, timeout=4):
     master_key, api_key = get_upstream_keys()
     url = f"{UPSTREAM_BASE}{path}"
     p = {"api_key": api_key}
@@ -262,7 +262,7 @@ def call_upstream(method, path, json_data=None, params=None):
             params=p,
             headers=headers,
             json=json_data,
-            timeout=15
+            timeout=timeout
         )
         try:
             return r.status_code, r.json()
@@ -519,8 +519,8 @@ def get_cached_clan_info(gid, force_refresh=False):
     if not force_refresh and cached and (now - cached["ts"] < 300):
         return cached["data"]
     try:
-        st, res = call_upstream("POST", "/api/client/group-action", json_data={"action": "get-clan-info", "group_id": gid_str})
-        if st == 200 and isinstance(res, dict) and (res.get("decoded") or res.get("clan_glory")):
+        st, res = call_upstream("POST", "/api/client/group-action", json_data={"action": "get-clan-info", "group_id": gid_str}, timeout=3)
+        if st == 200 and isinstance(res, dict):
             _CLAN_CACHE[gid_str] = {"ts": now, "data": res}
             return res
     except Exception:
@@ -533,11 +533,11 @@ def get_cached_group_glory(gid, force_refresh=False):
     now = time.time()
     gid_str = str(gid)
     cached = _GLORY_CACHE.get(gid_str)
-    if not force_refresh and cached and (now - cached["ts"] < 15):
+    if not force_refresh and cached and (now - cached["ts"] < 45):
         return cached["total_glory"], cached["details"]
     try:
-        st, res = call_upstream("POST", "/api/client/group-action", json_data={"action": "get-glory", "group_id": gid_str})
-        if st == 200 and isinstance(res, dict) and res.get("details"):
+        st, res = call_upstream("POST", "/api/client/group-action", json_data={"action": "get-glory", "group_id": gid_str}, timeout=3)
+        if st == 200 and isinstance(res, dict):
             total_glory = int(res.get("total_glory") or 0)
             details = res.get("details") or []
             _GLORY_CACHE[gid_str] = {"ts": now, "total_glory": total_glory, "details": details}
@@ -600,6 +600,16 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
     if up_status == 200 and isinstance(up_groups, list):
         live_map = {str(g.get("group_id") or g.get("id")): g for g in up_groups if isinstance(g, dict)}
         
+        # Determine relevant groups for caller upfront (Enforces zero latency for other users' groups)
+        if is_admin:
+            target_gids = set(str(k) for k in live_map.keys())
+        else:
+            if not user_id:
+                target_gids = set()
+            else:
+                c.execute("SELECT group_id FROM groups WHERE user_id = ?", (user_id,))
+                target_gids = set(str(r["group_id"]) for r in c.fetchall())
+
         # 1. Any old groups in DB marked running that are NOT in upstream -> update to completed in DB (only if older than 6 hours)
         if live_map:
             placeholders = ",".join("?" for _ in live_map.keys())
@@ -615,13 +625,13 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
             uptime = live.get("uptime") or "Active"
             games = live.get("games_played") or 0
 
-            # Query live glory/squad based on active provider
-            if prov == "ffglory_safe":
-                cname = live.get("clan_name") or f"Clan {cid}"
-                squad_raw = []
-                if status in ("running", "online"):
+            # Only perform deep glory/clan queries for groups the user actually owns (or if admin)
+            if str(gid) in target_gids and status in ("running", "online"):
+                if prov == "ffglory_safe":
+                    cname = live.get("clan_name") or f"Clan {cid}"
+                    squad_raw = []
                     cached_g = _GLORY_CACHE.get(str(gid))
-                    if not force_refresh and cached_g and (now - cached_g.get("ts", 0) < 15):
+                    if not force_refresh and cached_g and (now - cached_g.get("ts", 0) < 30):
                         glory = cached_g.get("total_glory", 0)
                     else:
                         try:
@@ -634,14 +644,12 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
                         except Exception:
                             glory = int(live.get("glory_farmed") or live.get("glory_gained") or 0)
                 else:
-                    glory = int(live.get("glory_farmed") or live.get("glory_gained") or 0)
-            elif status in ("running", "online"):
-                c_info = get_cached_clan_info(gid, force_refresh=force_refresh)
-                decoded = (c_info.get("decoded") if isinstance(c_info, dict) else {}) or {}
-                cname = decoded.get("clan_name") or live.get("clan_name") or f"Clan {cid}"
-                real_glory, real_details = get_cached_group_glory(gid, force_refresh=force_refresh)
-                glory = real_glory if real_glory > 0 else (live.get("glory_farmed") or live.get("glory_gained") or 0)
-                squad_raw = real_details if real_details else (live.get("details") or live.get("squad"))
+                    c_info = get_cached_clan_info(gid, force_refresh=force_refresh)
+                    decoded = (c_info.get("decoded") if isinstance(c_info, dict) else {}) or {}
+                    cname = decoded.get("clan_name") or live.get("clan_name") or f"Clan {cid}"
+                    real_glory, real_details = get_cached_group_glory(gid, force_refresh=force_refresh)
+                    glory = real_glory if real_glory > 0 else (live.get("glory_farmed") or live.get("glory_gained") or 0)
+                    squad_raw = real_details if real_details else (live.get("details") or live.get("squad"))
             else:
                 cname = live.get("clan_name") or f"Clan {cid}"
                 glory = live.get("glory_farmed") or live.get("glory_gained") or 0
@@ -982,10 +990,39 @@ def serve_index():
             return redirect("/login")
         return send_from_directory(BASE_DIR, "login.html")
     user_id = session.get("user_id")
-    state = get_user_dashboard_state(user_id)
+    try:
+        state = get_user_dashboard_state(user_id)
+    except Exception as e:
+        print(f"[Dashboard Load Error]: {e}")
+        state = None
+
     if not state:
-        session.clear()
-        return redirect("/login")
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT id, username, role, basic_credits, premium_credits, max_groups FROM users WHERE id = ?", (user_id,))
+        u = c.fetchone()
+        conn.close()
+        if not u:
+            session.clear()
+            return redirect("/login")
+        user_data = dict(u)
+        state = {
+            "user": user_data,
+            "groups": [],
+            "transactions": [],
+            "coupons": [],
+            "redeemed": [],
+            "history": [],
+            "pricing": {
+                "credit_price_inr": 95,
+                "credit_price_usd": 1.7,
+                "regions": [r for r in DEFAULT_REGIONS if r.get("enabled")],
+                "upstream_credits": 0,
+                "upstream_in_stock": True,
+                "global_maintenance": False
+            },
+            "alerts": {"active": False, "title": "", "message": ""}
+        }
 
     state_json = json.dumps(state)
     state_b64 = base64.b64encode(state_json.encode("utf-8")).decode("utf-8")
@@ -2573,7 +2610,8 @@ def admin_get_settings():
         "credit_price_usd", "usd_to_inr_rate", "reseller_binance_pay_id",
         "reseller_upi_id", "reseller_upi_name", "reseller_usdt_address",
         "reseller_usdt_network", "auto_credit_mode", "upstream_api_key",
-        "upstream_master_key", "broadcast_active", "broadcast_title", "broadcast_message",
+        "upstream_master_key", "upstream_safe_key", "active_upstream_provider",
+        "broadcast_active", "broadcast_title", "broadcast_message",
         "custom_payment_api_url", "custom_payment_api_key", "custom_payment_webhook_secret",
         "custom_gateway_mode", "contact_whatsapp", "contact_telegram", "firebase_db_secret"
     ]
@@ -2583,10 +2621,13 @@ def admin_get_settings():
             res[k] = get_setting(k, "6282326562316")
         elif k == "contact_telegram":
             res[k] = get_setting(k, "ff_level_pro")
+        elif k == "active_upstream_provider":
+            res[k] = get_setting(k, "ffglory_pro")
         else:
             res[k] = get_setting(k, "")
     res["contact_whatsapp_url"] = format_wa_url(res.get("contact_whatsapp"))
     res["contact_telegram_url"] = format_tg_url(res.get("contact_telegram"))
+    res["settings"] = dict(res)
     return jsonify(res)
 
 @app.route("/api/admin/save-settings", methods=["POST"])
@@ -2599,7 +2640,8 @@ def admin_save_settings():
         "credit_price_usd", "usd_to_inr_rate", "reseller_binance_pay_id",
         "reseller_upi_id", "reseller_upi_name", "reseller_usdt_address",
         "reseller_usdt_network", "auto_credit_mode", "upstream_api_key",
-        "upstream_master_key", "custom_payment_api_url", "custom_payment_api_key",
+        "upstream_master_key", "upstream_safe_key", "active_upstream_provider",
+        "custom_payment_api_url", "custom_payment_api_key",
         "custom_payment_webhook_secret", "custom_gateway_mode",
         "contact_whatsapp", "contact_telegram", "firebase_db_secret"
     ]
