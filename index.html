@@ -2778,6 +2778,13 @@
                             const glory = g.glory_gained || 0;
                             const uptime = g.uptime || 'Active';
 
+                            const isSafeSquad = (g.provider === 'ffglory_safe') || 
+                                                (g.region === 'IN_SAFE' || g.region === 'in_safe') ||
+                                                (g.region === 'IN' && (String(gid).length < 12 || String(gid).includes('-') || String(gid).startsWith('SAFE-'))) ||
+                                                (currentPricing?.active_provider === 'ffglory_safe');
+
+                            const goalLabel = isSafeSquad ? '30min Goal' : '8h Goal';
+
                             return `
                                 <div class="ng-card p-4 relative overflow-hidden group-card" id="card-${gid}" data-running="${isOnline}">
                                     <div class="flex gap-3 mb-3 relative z-10 group-classic-heading">
@@ -2841,7 +2848,7 @@
 
                                     <div class="mb-3 relative z-10 group-runtime-progress">
                                         <div class="flex items-center justify-between mb-1">
-                                            <span class="text-[10px] text-[#777] uppercase tracking-wider flex items-center gap-1.5">8h Goal</span>
+                                            <span class="text-[10px] text-[#777] uppercase tracking-wider flex items-center gap-1.5">${goalLabel}</span>
                                             <span class="flex items-center gap-2"><span class="text-[11px] font-mono notranslate font-bold text-amber-400">Active</span></span>
                                         </div>
                                         <div class="relative w-full h-1.5">
@@ -2869,6 +2876,7 @@
                                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                             Delete
                                         </button>
+                                        ${!isSafeSquad ? `
                                         <button id="extend-btn-${gid}" onclick="groupExtend('${gid}', false, 1)" class="ng-btn-outline text-xs py-2.5 px-3 flex items-center justify-center gap-1.5 w-full sm:w-auto sm:flex-none">
                                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path></svg>
                                             Continue! (+8h) · 1 credit
@@ -2877,6 +2885,7 @@
                                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                                             Squad Info
                                         </button>
+                                        ` : ''}
                                     </div>
                                 </div>
                             `;

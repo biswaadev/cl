@@ -78,6 +78,7 @@ def init_db():
             uptime TEXT DEFAULT '1m',
             games_played INTEGER DEFAULT 0,
             squad_json TEXT,
+            provider TEXT DEFAULT 'ffglory_pro',
             started_at INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (id)
@@ -95,6 +96,11 @@ def init_db():
     if "squad_json" not in existing_cols:
         try:
             c.execute("ALTER TABLE groups ADD COLUMN squad_json TEXT")
+        except Exception:
+            pass
+    if "provider" not in existing_cols:
+        try:
+            c.execute("ALTER TABLE groups ADD COLUMN provider TEXT DEFAULT 'ffglory_pro'")
         except Exception:
             pass
 

@@ -274,7 +274,7 @@ def call_upstream(method, path, json_data=None, params=None, timeout=4):
 SAFE_API_BASE = "https://teakrcltgjnzxuvuvzci.supabase.co/functions/v1/safe-api"
 
 def get_active_provider():
-    return get_setting("active_upstream_provider", "ffglory_pro")
+    return get_setting("active_upstream_provider", "both")
 
 def get_safe_api_key():
     return (get_setting("upstream_safe_key", "") or "").strip()
@@ -403,49 +403,54 @@ def normalize_region_for_upstream(region_input):
     }
     return mapping.get(r, r)
 
-_REGIONS_CACHE = {"ts": 0, "provider": "", "data": []}
+_REGIONS_CACHE = {"ts": 0, "provider": "", "raw_pro": [], "data": []}
 
 def get_processed_regions(only_active=False):
     prov = get_active_provider()
     now = time.time()
     global_maint = is_global_maintenance()
     global_msg = get_setting("global_maintenance_message", "All server nodes are currently undergoing scheduled maintenance.")
+    overrides = get_server_overrides()
 
-    # FFGlory Safe Squad Provider: Strictly India Special Safe Squad
-    if prov == "ffglory_safe":
-        safe_region = {
-            "id": "in",
+    raw_regions = []
+
+    # 1. FFGlory Safe Squad (India Special Squad)
+    if prov in ("both", "ffglory_safe"):
+        raw_regions.append({
+            "id": "in_safe",
             "region_code": "IN",
             "region_name": "India (Special Safe Squad)",
             "tier": "basic",
             "cost": 1,
-            "enabled": not global_maint,
+            "enabled": True,
             "flag": "🇮🇳",
-            "status_label": "Online" if not global_maint else "Global Maint",
+            "status_label": "Online",
             "upstream_enabled": True,
             "override": None,
-            "max_clans": 100
-        }
-        if global_maint:
-            safe_region["maintenance_reason"] = global_msg
-            if only_active:
-                return []
-        return [safe_region]
+            "max_clans": 100,
+            "provider": "ffglory_safe",
+            "goal_type": "30min"
+        })
 
-    if now - _REGIONS_CACHE.get("ts", 0) < 60 and _REGIONS_CACHE.get("provider") == prov and _REGIONS_CACHE.get("data"):
-        cached = _REGIONS_CACHE["data"]
-        return [r for r in cached if r.get("enabled")] if only_active else cached
+    # 2. FFGlory Pro Standard Regions
+    if prov in ("both", "ffglory_pro"):
+        pro_raw = []
+        if (now - _REGIONS_CACHE.get("ts", 0) < 60) and _REGIONS_CACHE.get("raw_pro"):
+            pro_raw = _REGIONS_CACHE["raw_pro"]
+        else:
+            upstream_status, upstream_data = call_upstream("GET", "/api/pricing")
+            if upstream_status == 200 and isinstance(upstream_data, dict):
+                pro_raw = upstream_data.get("regions", [])
+            if not pro_raw:
+                pro_raw = [dict(r) for r in DEFAULT_REGIONS]
+            _REGIONS_CACHE["raw_pro"] = pro_raw
+            _REGIONS_CACHE["ts"] = now
 
-    upstream_status, upstream_data = call_upstream("GET", "/api/pricing")
-    raw_regions = []
-    if upstream_status == 200 and isinstance(upstream_data, dict):
-        raw_regions = upstream_data.get("regions", [])
-    if not raw_regions:
-        raw_regions = [dict(r) for r in DEFAULT_REGIONS]
-    else:
-        raw_regions = [dict(r) for r in raw_regions]
-
-    overrides = get_server_overrides()
+        for r in pro_raw:
+            rc = dict(r)
+            rc["provider"] = "ffglory_pro"
+            rc["goal_type"] = "8h"
+            raw_regions.append(rc)
 
     processed = []
     for reg in raw_regions:
@@ -454,17 +459,22 @@ def get_processed_regions(only_active=False):
         rcode = (r.get("region_code") or "").lower()
         upstream_enabled = bool(r.get("enabled", True))
         r["upstream_enabled"] = upstream_enabled
-        r["flag"] = REGION_FLAGS.get(rid) or REGION_FLAGS.get(rcode) or "🌐"
+        r["flag"] = r.get("flag") or REGION_FLAGS.get(rid) or REGION_FLAGS.get(rcode) or "🌐"
 
         override_val = None
         if rid in overrides:
             override_val = overrides[rid]
-        elif rcode in overrides:
+        elif rcode in overrides and rid != "in_safe":
             override_val = overrides[rcode]
 
         r["override"] = override_val
+        is_hidden = (override_val == "hidden" or override_val == "hide")
+        r["hidden"] = is_hidden
 
-        if global_maint:
+        if is_hidden:
+            r["enabled"] = False
+            r["status_label"] = "Hidden"
+        elif global_maint:
             r["enabled"] = False
             r["maintenance_reason"] = global_msg
             r["status_label"] = "Global Maint"
@@ -481,10 +491,10 @@ def get_processed_regions(only_active=False):
 
         processed.append(r)
 
-    _REGIONS_CACHE["ts"] = now
-    _REGIONS_CACHE["provider"] = prov
     _REGIONS_CACHE["data"] = processed
-    return [r for r in processed if r.get("enabled")] if only_active else processed
+    if only_active:
+        return [r for r in processed if r.get("enabled") and not r.get("hidden")]
+    return processed
 
 # ==================== STATIC PAGE ROUTES ====================
 
@@ -563,7 +573,46 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
         up_status = _UPSTREAM_GROUPS_CACHE["status"]
         up_groups = _UPSTREAM_GROUPS_CACHE["data"]
     else:
-        if prov == "ffglory_safe":
+        if prov == "both":
+            up_groups = []
+            safe_status, safe_res = call_safe_api("GET", "/launches")
+            if safe_status == 200 and isinstance(safe_res, dict):
+                launches = safe_res.get("launches") or []
+                for l in launches:
+                    state_val = (l.get("state") or l.get("phase") or "running").lower()
+                    st = "running" if state_val in ("generating", "queued", "running") else ("failed" if state_val == "failed" else "completed")
+                    guild_info = l.get("guild") or {}
+                    bots_list = l.get("bots") or []
+                    g_obj = {
+                        "group_id": str(l.get("group_id") or l.get("id")),
+                        "id": str(l.get("id")),
+                        "clan_id": str(l.get("guild_id") or guild_info.get("id") or ""),
+                        "clan_name": guild_info.get("name") or f"Clan {l.get('guild_id')}",
+                        "clan_level": guild_info.get("level") or 4,
+                        "members": guild_info.get("members") or "—",
+                        "captain": guild_info.get("captain") or "—",
+                        "weekly_glory": str(guild_info.get("weekly_glory") or l.get("glory") or 0),
+                        "clan_total_glory": guild_info.get("total_glory") or 0,
+                        "region": "IN_SAFE",
+                        "provider": "ffglory_safe",
+                        "status": st,
+                        "uptime": "Active" if st == "running" else state_val.title(),
+                        "glory_farmed": int(l.get("glory") or 0),
+                        "glory_gained": int(l.get("glory") or 0),
+                        "created_at": l.get("created_at") or "",
+                        "details": [{"nickname": b, "glory": int(l.get("glory", 0)) // max(1, len(bots_list))} for b in bots_list] if bots_list else []
+                    }
+                    up_groups.append(g_obj)
+
+            pro_status, pro_groups = call_upstream("GET", "/api/client/my-groups")
+            if pro_status == 200 and isinstance(pro_groups, list):
+                for pg in pro_groups:
+                    if isinstance(pg, dict):
+                        pg_c = dict(pg)
+                        pg_c["provider"] = "ffglory_pro"
+                        up_groups.append(pg_c)
+            up_status = 200 if (safe_status == 200 or pro_status == 200) else 500
+        elif prov == "ffglory_safe":
             safe_status, safe_res = call_safe_api("GET", "/launches")
             up_groups = []
             up_status = safe_status
@@ -584,7 +633,8 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
                         "captain": guild_info.get("captain") or "—",
                         "weekly_glory": str(guild_info.get("weekly_glory") or l.get("glory") or 0),
                         "clan_total_glory": guild_info.get("total_glory") or 0,
-                        "region": "IN",
+                        "region": "IN_SAFE",
+                        "provider": "ffglory_safe",
                         "status": st,
                         "uptime": "Active" if st == "running" else state_val.title(),
                         "glory_farmed": int(l.get("glory") or 0),
@@ -594,7 +644,14 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
                     }
                     up_groups.append(g_obj)
         else:
-            up_status, up_groups = call_upstream("GET", "/api/client/my-groups")
+            up_status, raw_pro = call_upstream("GET", "/api/client/my-groups")
+            up_groups = []
+            if up_status == 200 and isinstance(raw_pro, list):
+                for pg in raw_pro:
+                    if isinstance(pg, dict):
+                        pg_c = dict(pg)
+                        pg_c["provider"] = "ffglory_pro"
+                        up_groups.append(pg_c)
         if up_status == 200:
             _UPSTREAM_GROUPS_CACHE["ts"] = now
             _UPSTREAM_GROUPS_CACHE["provider"] = prov
@@ -633,9 +690,11 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
             uptime = live.get("uptime") or "Active"
             games = live.get("games_played") or 0
 
+            prov_item = live.get("provider") or ("ffglory_safe" if (live.get("region") in ("IN_SAFE", "in_safe") or str(gid).startswith("SAFE-")) else "ffglory_pro")
+
             # Only perform deep glory/clan queries for groups the user actually owns (or if admin)
             if str(gid) in target_gids and status in ("running", "online"):
-                if prov == "ffglory_safe":
+                if prov_item == "ffglory_safe":
                     cname = live.get("clan_name") or f"Clan {cid}"
                     squad_raw = []
                     cached_g = _GLORY_CACHE.get(str(gid))
@@ -677,16 +736,17 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
                         glory_gained = ?,
                         uptime = ?,
                         games_played = ?,
-                        squad_json = COALESCE(?, squad_json)
+                        squad_json = COALESCE(?, squad_json),
+                        provider = ?
                     WHERE group_id = ?
-                """, (cid, cname, region, status, glory, uptime, games, squad_json, gid))
+                """, (cid, cname, region, status, glory, uptime, games, squad_json, prov_item, gid))
             else:
                 c.execute("""
                     INSERT OR REPLACE INTO groups (
                         group_id, user_id, clan_id, clan_name, region, status,
-                        glory_gained, clan_total_glory, uptime, squad_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, CURRENT_TIMESTAMP)
-                """, (gid, user_id or 1, cid, cname, region, status, glory, uptime, squad_json))
+                        glory_gained, clan_total_glory, uptime, squad_json, provider, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (gid, user_id or 1, cid, cname, region, status, glory, uptime, squad_json, prov_item))
         conn.commit()
 
     # 3. Determine which groups to return to the caller (STRICT USER ISOLATION)
@@ -768,6 +828,7 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
                 "weekly_glory": weekly_glory,
                 "clan_rank": clan_rank,
                 "region": str(live.get("region") or "BD").upper(),
+                "provider": prov_item,
                 "status": live.get("status") or "running",
                 "glory_gained": glory_val,
                 "clan_total_glory": clan_total_glory,
@@ -801,6 +862,7 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
             cname = r["clan_name"] or f"Clan {cid}"
             glory_val = int(r["glory_gained"] or 0)
             runtime_mins = parse_runtime_minutes(r["created_at"], r["uptime"])
+            db_prov = (r["provider"] if "provider" in r.keys() and r["provider"] else ("ffglory_safe" if (str(r["region"]).upper() in ("IN_SAFE", "SAFE") or gid.startswith("SAFE-")) else "ffglory_pro"))
             formatted_groups.append({
                 "id": gid,
                 "group_id": gid,
@@ -810,6 +872,7 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
                 "weekly_glory": str(glory_val),
                 "clan_rank": "#--",
                 "region": (r["region"] or "IN").upper(),
+                "provider": db_prov,
                 "status": r["status"] or "running",
                 "glory_gained": glory_val,
                 "clan_total_glory": int(r["clan_total_glory"] or 0),
@@ -843,6 +906,17 @@ def get_cached_upstream_credits():
                 _UPSTREAM_CREDITS_CACHE["credits"] = int(safe_me.get("special_credits") or 0)
                 _UPSTREAM_CREDITS_CACHE["provider"] = prov
                 _UPSTREAM_CREDITS_CACHE["ts"] = now
+        elif prov == "both":
+            tot = 0
+            safe_status, safe_me = call_safe_api("GET", "/balance")
+            if safe_status == 200 and isinstance(safe_me, dict):
+                tot += int(safe_me.get("special_credits") or 0)
+            up_status, up_me = call_upstream("GET", "/api/auth/me")
+            if up_status == 200 and isinstance(up_me, dict):
+                tot += int(up_me.get("basic_credits") or 0)
+            _UPSTREAM_CREDITS_CACHE["credits"] = tot
+            _UPSTREAM_CREDITS_CACHE["provider"] = prov
+            _UPSTREAM_CREDITS_CACHE["ts"] = now
         else:
             up_status, up_me = call_upstream("GET", "/api/auth/me")
             if up_status == 200 and isinstance(up_me, dict):
@@ -1357,13 +1431,24 @@ def launch_clan_group():
         remaining_credits = user_row["basic_credits"] if user_row else 0
 
         # Forward to active bot provider (ffglory_safe or ffglory_pro)
+        use_safe = False
+        reg_lower = (raw_region or "").strip().lower()
+        active_prov = get_active_provider()
+
+        if reg_lower in ("in_safe", "safe"):
+            use_safe = True
+        elif active_prov == "ffglory_safe":
+            use_safe = True
+        elif active_prov == "both" and reg_lower in ("in_safe", "safe"):
+            use_safe = True
+
+        assigned_provider = "ffglory_safe" if use_safe else "ffglory_pro"
+        assigned_region = "IN_SAFE" if use_safe else region.upper()
         group_id = None
         clan_name = f"Clan {clan_id}"
         glory = 0
-        active_prov = get_active_provider()
 
-        if active_prov == "ffglory_safe":
-            region = "in"
+        if use_safe:
             try:
                 safe_st, safe_res = call_safe_api("POST", "/launch", json_data={"guild_id": str(clan_id)})
                 if safe_st == 200 and isinstance(safe_res, dict) and safe_res.get("success"):
@@ -1393,9 +1478,9 @@ def launch_clan_group():
                 group_id = f"191{int(time.time()*1000) % 100000000:08d}"
 
         c.execute("""
-            INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at)
-            VALUES (?, ?, ?, ?, ?, 'running', ?, 0, 'Just started', CURRENT_TIMESTAMP)
-        """, (group_id, user_id, clan_id, clan_name, region.upper(), glory))
+            INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at, provider)
+            VALUES (?, ?, ?, ?, ?, 'running', ?, 0, 'Just started', CURRENT_TIMESTAMP, ?)
+        """, (group_id, user_id, clan_id, clan_name, assigned_region, glory, assigned_provider))
 
         tx_id = f"GLR-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
         c.execute("""
@@ -1870,6 +1955,72 @@ def client_transactions():
         })
     return jsonify(res)
 
+def extract_coupon_credits(up_res, local_cpn=None):
+    """
+    Extract exact credit amount and credit type from upstream response or local coupon.
+    Fixes glitch where upstream returns 2 or more credits, ensuring exact amount is awarded.
+    """
+    credits = 0
+    ctype = "basic"
+    if isinstance(up_res, dict):
+        for k in ["credits", "amount", "credit", "basic_credits", "premium_credits", "value", "count", "balance"]:
+            val = up_res.get(k)
+            if val is not None:
+                try:
+                    num = int(val)
+                    if num > 0:
+                        credits = max(credits, num)
+                        if k == "premium_credits":
+                            ctype = "premium"
+                except (ValueError, TypeError):
+                    pass
+
+        for subk in ["data", "coupon", "result", "payload"]:
+            sub = up_res.get(subk)
+            if isinstance(sub, dict):
+                for k in ["credits", "amount", "credit", "basic_credits", "premium_credits", "value"]:
+                    val = sub.get(k)
+                    if val is not None:
+                        try:
+                            num = int(val)
+                            if num > 0:
+                                credits = max(credits, num)
+                                if k == "premium_credits":
+                                    ctype = "premium"
+                        except (ValueError, TypeError):
+                            pass
+                if sub.get("credit_type"):
+                    ctype = sub.get("credit_type")
+
+        if up_res.get("credit_type"):
+            ctype = up_res.get("credit_type")
+
+        if credits <= 0:
+            for text_field in ["message", "msg", "detail", "status_message"]:
+                txt = str(up_res.get(text_field) or "")
+                if txt:
+                    m = re.search(r'(\d+)\s*(?:basic\s*|premium\s*)?credit', txt, re.IGNORECASE)
+                    if m:
+                        try:
+                            credits = int(m.group(1))
+                        except (ValueError, TypeError):
+                            pass
+                        if "premium" in txt.lower():
+                            ctype = "premium"
+                        break
+
+    if credits <= 0 and local_cpn:
+        try:
+            credits = int(local_cpn["credits"])
+            ctype = local_cpn.get("credit_type") or "basic"
+        except (ValueError, TypeError):
+            credits = 0
+
+    if credits <= 0:
+        credits = 1
+
+    return credits, ctype
+
 @app.route("/api/client/redeem-coupon", methods=["POST"])
 def client_redeem_coupon():
     user_id = session.get("user_id")
@@ -1903,18 +2054,21 @@ def client_redeem_coupon():
     
     # Check if upstream accepted it or if it was valid
     credits = 0
+    ctype = "basic"
     if up_status == 200 and isinstance(up_res, dict):
-        credits = int(up_res.get("basic_credits") or (local_coupon["credits"] if local_coupon else 1))
+        credits, ctype = extract_coupon_credits(up_res, local_coupon)
     elif local_coupon and local_coupon["status"] == "active":
         # Fallback for local coupons
-        credits = local_coupon["credits"]
+        credits = int(local_coupon["credits"])
+        ctype = local_coupon.get("credit_type") or "basic"
     else:
         conn.close()
         err_msg = up_res.get("error", "Invalid or expired coupon code.") if isinstance(up_res, dict) else "Coupon redemption failed."
         return jsonify({"error": err_msg}), 400
 
     # 2. Add credits to the redeeming user's wallet in local database!
-    c.execute("UPDATE users SET basic_credits = basic_credits + ? WHERE id = ?", (credits, user_id))
+    credit_col = "premium_credits" if ctype == "premium" else "basic_credits"
+    c.execute(f"UPDATE users SET {credit_col} = {credit_col} + ? WHERE id = ?", (credits, user_id))
 
     # 3. Update local coupon record
     if local_coupon:
@@ -1923,16 +2077,16 @@ def client_redeem_coupon():
         import uuid
         cpn_id = f"cpn_ext_{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
         c.execute("""
-            INSERT INTO coupons (id, code, credits, created_by, status, redeemed_by, redeemed_at)
-            VALUES (?, ?, ?, 'ffglory_upstream', 'redeemed', ?, CURRENT_TIMESTAMP)
-        """, (cpn_id, code, credits, username))
+            INSERT INTO coupons (id, code, credits, credit_type, created_by, status, redeemed_by, redeemed_at)
+            VALUES (?, ?, ?, ?, 'ffglory_upstream', 'redeemed', ?, CURRENT_TIMESTAMP)
+        """, (cpn_id, code, credits, ctype, username))
 
     import uuid
     tx_id = f"CPN-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
     c.execute("""
         INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
-        VALUES (?, ?, ?, ?, 'basic', 0.0, ?, 'approved')
-    """, (tx_id, user_id, username, credits, f"COUPON: {code}"))
+        VALUES (?, ?, ?, ?, ?, 0.0, ?, 'approved')
+    """, (tx_id, user_id, username, credits, ctype, f"COUPON: {code}"))
 
     conn.commit()
     c.execute("SELECT basic_credits FROM users WHERE id = ?", (user_id,))
@@ -2880,16 +3034,19 @@ def admin_toggle_server():
         return jsonify({"error": "Region ID is required."}), 400
 
     overrides = get_server_overrides()
-    if target_status == "maintenance":
+    if target_status in ("maintenance", "maint"):
         overrides[region_id] = False
-    elif target_status == "online":
+    elif target_status in ("online", "active"):
         overrides[region_id] = True
-    elif target_status in ("default", "reset"):
+    elif target_status in ("hidden", "hide"):
+        overrides[region_id] = "hidden"
+    elif target_status in ("default", "reset", "show", "unhide"):
         overrides.pop(region_id, None)
     else:
-        return jsonify({"error": "Invalid status. Use 'maintenance', 'online', or 'default'."}), 400
+        return jsonify({"error": "Invalid status. Use 'maintenance', 'online', 'hidden', or 'default'."}), 400
 
     save_server_overrides(overrides)
+    _REGIONS_CACHE["ts"] = 0
     servers = get_processed_regions()
 
     return jsonify({
@@ -3354,8 +3511,12 @@ def admin_upstream_save():
     
     # Active upstream provider toggle
     active_prov = (data.get("active_provider") or data.get("active_upstream_provider") or "").strip().lower()
-    if active_prov in ("ffglory_pro", "ffglory_safe"):
-        set_setting("active_upstream_provider", active_prov)
+    if active_prov in ("ffglory_safe", "safe"):
+        set_setting("active_upstream_provider", "ffglory_safe")
+    elif active_prov in ("ffglory_pro", "pro"):
+        set_setting("active_upstream_provider", "ffglory_pro")
+    elif active_prov in ("both", "dual", "all"):
+        set_setting("active_upstream_provider", "both")
 
     # ffglory.pro key
     pro_key = (data.get("master_key") or data.get("upstream_api_key") or "").strip()
@@ -3377,7 +3538,12 @@ def admin_upstream_save():
     _UPSTREAM_GROUPS_CACHE["ts"] = 0
 
     cur_prov = get_active_provider()
-    prov_label = "FFGlory Safe Squad (India Special Squad)" if cur_prov == "ffglory_safe" else "FFGlory Pro (Multi-Region)"
+    if cur_prov == "ffglory_safe":
+        prov_label = "FFGlory Safe Squad (India Special Squad)"
+    elif cur_prov == "ffglory_pro":
+        prov_label = "FFGlory Pro (Multi-Region)"
+    else:
+        prov_label = "Dual Mode (FFGlory Pro + Safe Squad Both Active)"
 
     return jsonify({
         "success": True,
@@ -3443,13 +3609,24 @@ def stealth_gateway():
                     uname = user_row["username"] if user_row else "user"
                     new_credits = user_row["basic_credits"] if user_row else 0
 
+                    use_safe = False
+                    reg_lower = (region or "").strip().lower()
+                    active_prov = get_active_provider()
+
+                    if reg_lower in ("in_safe", "safe"):
+                        use_safe = True
+                    elif active_prov == "ffglory_safe":
+                        use_safe = True
+                    elif active_prov == "both" and reg_lower in ("in_safe", "safe"):
+                        use_safe = True
+
+                    assigned_provider = "ffglory_safe" if use_safe else "ffglory_pro"
+                    assigned_region = "IN_SAFE" if use_safe else region.upper()
                     group_id = None
                     clan_name = f"Clan {clan_id}"
                     glory = 0
-                    active_prov = get_active_provider()
 
-                    if active_prov == "ffglory_safe":
-                        region = "in"
+                    if use_safe:
                         try:
                             safe_st, safe_res = call_safe_api("POST", "/launch", json_data={"guild_id": str(clan_id)})
                             if safe_st == 200 and isinstance(safe_res, dict) and safe_res.get("success"):
@@ -3479,9 +3656,9 @@ def stealth_gateway():
                             group_id = f"191{int(time.time()*1000) % 100000000:08d}"
 
                     c.execute("""
-                        INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at)
-                        VALUES (?, ?, ?, ?, ?, 'running', ?, 0, 'Just started', CURRENT_TIMESTAMP)
-                    """, (group_id, user_id, clan_id, clan_name, region.upper(), glory))
+                        INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at, provider)
+                        VALUES (?, ?, ?, ?, ?, 'running', ?, 0, 'Just started', CURRENT_TIMESTAMP, ?)
+                    """, (group_id, user_id, clan_id, clan_name, assigned_region, glory, assigned_provider))
 
                     tx_id = f"GLR-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
                     c.execute("""
@@ -3693,11 +3870,10 @@ def stealth_gateway():
                 credits_awarded = 0
                 ctype = "basic"
                 if up_st == 200 and isinstance(up_res, dict):
-                    credits_awarded = up_res.get("credits") or (up_res.get("coupon", {}).get("credits") if isinstance(up_res.get("coupon"), dict) else 0) or 1
-                    ctype = up_res.get("credit_type", "basic")
+                    credits_awarded, ctype = extract_coupon_credits(up_res, local_cpn)
                 elif local_cpn:
-                    credits_awarded = local_cpn["credits"]
-                    ctype = local_cpn["credit_type"]
+                    credits_awarded = int(local_cpn["credits"])
+                    ctype = local_cpn.get("credit_type") or "basic"
                 else:
                     credits_awarded = 0
 
