@@ -13,7 +13,7 @@ import sqlite3
 import requests
 from db import get_db, resolve_db_path
 
-FIREBASE_DB_URL = os.environ.get("FIREBASE_DB_URL", "https://java-d72c4-default-rtdb.firebaseio.com").rstrip("/")
+FIREBASE_DB_URL = os.environ.get("FIREBASE_DB_URL", "https://chatbb-6ad08-default-rtdb.firebaseio.com").rstrip("/")
 DEFAULT_FIREBASE_SECRET = "jRD9dMfKsio67rKV6QCSxWQZJHqYKbt7IKDTu4Sk"
 
 _sync_lock = threading.Lock()

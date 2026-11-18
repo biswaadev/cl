@@ -108,6 +108,32 @@
         gtag('js', new Date());
         gtag('config', 'G-VZM1LD0XW6');
     </script>
+    <script type="module">
+      // Import the functions you need from the SDKs you need
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js";
+      import { getAnalytics } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-analytics.js";
+      // TODO: Add SDKs for Firebase products that you want to use
+      // https://firebase.google.com/docs/web/setup#available-libraries
+
+      // Your web app's Firebase configuration
+      // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+      const firebaseConfig = {
+        apiKey: "AIzaSyCd_SoHXYxrZtMQvGHcwuEnZ6jr0cmsrRw",
+        authDomain: "chatbb-6ad08.firebaseapp.com",
+        databaseURL: "https://chatbb-6ad08-default-rtdb.firebaseio.com",
+        projectId: "chatbb-6ad08",
+        storageBucket: "chatbb-6ad08.firebasestorage.app",
+        messagingSenderId: "679269697610",
+        appId: "1:679269697610:web:c5f41d051fea72cd1f7eb3",
+        measurementId: "G-0JLVCK36SQ"
+      };
+
+      // Initialize Firebase
+      const app = initializeApp(firebaseConfig);
+      const analytics = getAnalytics(app);
+      window.firebaseApp = app;
+      window.firebaseAnalytics = analytics;
+    </script>
 </head>
 <body class="min-h-screen flex flex-col">
 
@@ -539,8 +565,12 @@ document.addEventListener('DOMContentLoaded', function() {
     fetch('/api/auth/me')
         .then(function(r) { return r.json(); })
         .then(function(res) {
-            if (res.authenticated) {
-                window.location.href = '/';
+            if (res.authenticated || res.id || (res.role && res.role !== 'guest')) {
+                if (res.role === 'admin') {
+                    window.location.href = '/admin';
+                } else {
+                    window.location.href = '/';
+                }
             }
         })
         .catch(function() {});
@@ -596,7 +626,11 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(function(data) {
                 if (data.success || data.ok) {
                     if (loginText) loginText.textContent = 'Success! Loading...';
-                    window.location.href = '/';
+                    if (data.user && data.user.role === 'admin') {
+                        window.location.href = '/admin';
+                    } else {
+                        window.location.href = '/';
+                    }
                 } else {
                     showError(data.error || 'Invalid credentials');
                     if (loginBtn) loginBtn.disabled = false;

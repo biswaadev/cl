@@ -98,7 +98,11 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(function(data) {
                 if (data.success || data.ok) {
                     if (loginText) loginText.textContent = 'Success! Loading...';
-                    window.location.href = '/';
+                    if (data.user && data.user.role === 'admin') {
+                        window.location.href = '/admin';
+                    } else {
+                        window.location.href = '/';
+                    }
                 } else {
                     showError(data.error || 'Invalid credentials');
                     if (loginBtn) loginBtn.disabled = false;

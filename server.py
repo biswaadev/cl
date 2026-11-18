@@ -29,6 +29,9 @@ from firebase_sync import (
 
 app = Flask(__name__, static_folder=None)
 app.secret_key = 'ffglory_prod_secret_84b879661bf49d33'
+app.config["PERMANENT_SESSION_LIFETIME"] = datetime.timedelta(days=30)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 _db_ready = False
@@ -1150,10 +1153,8 @@ def serve_login():
 @app.route("/admin")
 @app.route("/admin.html")
 def serve_admin():
-    if "user_id" not in session:
+    if not require_admin():
         return redirect("/login")
-    if session.get("role") != "admin":
-        return redirect("/dashboard")
 
     admin_state = get_admin_dashboard_state()
     state_b64 = base64.b64encode(json.dumps(admin_state).encode("utf-8")).decode("utf-8")
@@ -1321,6 +1322,7 @@ def auth_login():
     if user["password_hash"] != pw_hash:
         return jsonify({"error": "Invalid username or password."}), 401
 
+    session.permanent = True
     session["user_id"] = user["id"]
     session["username"] = user["username"]
     session["role"] = user["role"]
@@ -1363,6 +1365,7 @@ def auth_me():
         return jsonify({"error": "User not found or banned"}), 404
 
     return jsonify({
+        "authenticated": True,
         "id": user["id"],
         "username": user["username"],
         "role": user["role"],
@@ -2310,7 +2313,38 @@ def client_alerts():
 # ==================== ADMIN PANEL MANAGEMENT ====================
 
 def require_admin():
-    return session.get("role") == "admin"
+    if session.get("role") == "admin":
+        return True
+    user_id = session.get("user_id")
+    if user_id:
+        try:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT id, username, role FROM users WHERE id = ?", (user_id,))
+            u = c.fetchone()
+            conn.close()
+            if u and u["role"] == "admin":
+                session["role"] = "admin"
+                session["username"] = u["username"]
+                return True
+        except Exception:
+            pass
+    uname = session.get("username")
+    if uname in ("admin", "adminrusher"):
+        try:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT id, username, role FROM users WHERE LOWER(username) = ?", (uname.lower(),))
+            u = c.fetchone()
+            conn.close()
+            if u and u["role"] == "admin":
+                session["user_id"] = u["id"]
+                session["username"] = u["username"]
+                session["role"] = "admin"
+                return True
+        except Exception:
+            pass
+    return False
 
 @app.route("/api/admin/overview", methods=["GET"])
 def admin_overview():
