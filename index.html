@@ -2209,15 +2209,6 @@
                                             <span id="region-usd-price" class="text-green-400">₹120 INR</span>
                                         </div>
                                         <div id="region-extend-info" class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" style="display:none"></div>
-                                        <!-- Disabled region notification prompt -->
-                                        <div id="region-disabled-notify" class="mt-2 hidden">
-                                            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                                                <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-                                                </svg>
-                                                <p class="text-[11px] text-amber-300/80">Some regions are under maintenance. <button onclick="enableRegionNotify()" class="underline text-amber-400 hover:text-amber-300 font-semibold">Enable notifications</button> to get alerted when they're back.</p>
-                                            </div>
-                                        </div>
                                     </div>
                                     <div class="ng-form-group">
                                         <label class="ng-form-label flex items-center gap-2">
@@ -3421,15 +3412,30 @@
         select.innerHTML = '';
         if (pickerOptions) pickerOptions.innerHTML = '';
 
-        regions.forEach((reg, index) => {
+        // Strict filter: Maintenance / disabled regions are completely hidden
+        const activeRegions = (regions || []).filter(reg => reg.enabled !== false);
+
+        if (activeRegions.length === 0) {
+            const opt = document.createElement('option');
+            opt.disabled = true;
+            opt.selected = true;
+            opt.textContent = 'No servers currently online';
+            select.appendChild(opt);
+            const valEl = document.getElementById('region-picker-value');
+            if (valEl) valEl.innerHTML = '<span class="text-gray-400">No servers online</span>';
+            return;
+        }
+
+        activeRegions.forEach((reg, index) => {
             const flag = getRegionFlag(reg.id || reg.region_code);
             const opt = document.createElement('option');
             opt.value = reg.id;
-            opt.textContent = `${flag}  ${reg.region_name} (${reg.region_code}) - ${reg.enabled ? 'Available' : 'Maintenance'}`;
-            opt.disabled = !reg.enabled;
-            if (reg.id === 'na' || (index === 0 && !select.value)) {
+            opt.textContent = `${flag}  ${reg.region_name} (${reg.region_code})`;
+            if (index === 0 || reg.id === currentSelectedRegion) {
                 opt.selected = true;
-                currentSelectedRegion = reg.id;
+                if (!currentSelectedRegion || !activeRegions.some(r => r.id === currentSelectedRegion)) {
+                    currentSelectedRegion = reg.id;
+                }
             }
             select.appendChild(opt);
 
@@ -3440,11 +3446,10 @@
                 btn.innerHTML = `
                     <div class="flex items-center gap-2.5">
                         <span class="text-base leading-none select-none">${flag}</span>
-                        <span class="font-medium ${reg.enabled ? 'text-gray-200' : 'text-gray-500'}">${reg.region_name} (${reg.region_code})</span>
+                        <span class="font-medium text-gray-200">${reg.region_name} (${reg.region_code})</span>
                     </div>
-                    <span class="text-[11px] font-semibold px-2 py-0.5 rounded ${reg.enabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'}">${reg.enabled ? 'Online' : 'Maint'}</span>
+                    <span class="text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Online</span>
                 `;
-                btn.disabled = !reg.enabled;
                 btn.onclick = () => {
                     select.value = reg.id;
                     currentSelectedRegion = reg.id;
@@ -3457,11 +3462,15 @@
             }
         });
 
-        const activeOpt = regions.find(r => r.id === currentSelectedRegion);
-        const valEl = document.getElementById('region-picker-value');
-        if (valEl && activeOpt) {
-            const flag = getRegionFlag(activeOpt.id || activeOpt.region_code);
-            valEl.innerHTML = `<span class="mr-2 text-base leading-none">${flag}</span><span>${activeOpt.region_name} (${activeOpt.region_code})</span>`;
+        const activeOpt = activeRegions.find(r => r.id === currentSelectedRegion) || activeRegions[0];
+        if (activeOpt) {
+            currentSelectedRegion = activeOpt.id;
+            select.value = activeOpt.id;
+            const valEl = document.getElementById('region-picker-value');
+            if (valEl) {
+                const flag = getRegionFlag(activeOpt.id || activeOpt.region_code);
+                valEl.innerHTML = `<span class="mr-2 text-base leading-none">${flag}</span><span>${activeOpt.region_name} (${activeOpt.region_code})</span>`;
+            }
         }
         updateRegionPrice();
     }

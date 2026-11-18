@@ -271,6 +271,40 @@ def call_upstream(method, path, json_data=None, params=None):
     except Exception as e:
         return 500, {"error": f"Upstream connection failed: {str(e)}"}
 
+SAFE_API_BASE = "https://teakrcltgjnzxuvuvzci.supabase.co/functions/v1/safe-api"
+
+def get_active_provider():
+    return get_setting("active_upstream_provider", "ffglory_pro")
+
+def get_safe_api_key():
+    return (get_setting("upstream_safe_key", "") or "").strip()
+
+def call_safe_api(method, path, json_data=None, params=None):
+    safe_key = get_safe_api_key()
+    if not safe_key:
+        return 401, {"error": "Safe Squad API key not configured in Admin Settings"}
+    url = f"{SAFE_API_BASE}{path}"
+    headers = {
+        "x-api-key": safe_key,
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FFGlorySafe/1.5"
+    }
+    try:
+        r = requests.request(
+            method,
+            url,
+            headers=headers,
+            json=json_data,
+            params=params,
+            timeout=15
+        )
+        try:
+            return r.status_code, r.json()
+        except Exception:
+            return r.status_code, {"text": r.text}
+    except Exception as e:
+        return 500, {"error": f"Safe API connection failed: {str(e)}"}
+
 # ==================== SERVER & REGION MAINTENANCE MANAGEMENT ====================
 
 REGION_FLAGS = {
@@ -369,12 +403,38 @@ def normalize_region_for_upstream(region_input):
     }
     return mapping.get(r, r)
 
-_REGIONS_CACHE = {"ts": 0, "data": []}
+_REGIONS_CACHE = {"ts": 0, "provider": "", "data": []}
 
-def get_processed_regions():
+def get_processed_regions(only_active=False):
+    prov = get_active_provider()
     now = time.time()
-    if now - _REGIONS_CACHE["ts"] < 60 and _REGIONS_CACHE["data"]:
-        return _REGIONS_CACHE["data"]
+    global_maint = is_global_maintenance()
+    global_msg = get_setting("global_maintenance_message", "All server nodes are currently undergoing scheduled maintenance.")
+
+    # FFGlory Safe Squad Provider: Strictly India Special Safe Squad
+    if prov == "ffglory_safe":
+        safe_region = {
+            "id": "in",
+            "region_code": "IN",
+            "region_name": "India (Special Safe Squad)",
+            "tier": "basic",
+            "cost": 1,
+            "enabled": not global_maint,
+            "flag": "🇮🇳",
+            "status_label": "Online" if not global_maint else "Global Maint",
+            "upstream_enabled": True,
+            "override": None,
+            "max_clans": 100
+        }
+        if global_maint:
+            safe_region["maintenance_reason"] = global_msg
+            if only_active:
+                return []
+        return [safe_region]
+
+    if now - _REGIONS_CACHE.get("ts", 0) < 60 and _REGIONS_CACHE.get("provider") == prov and _REGIONS_CACHE.get("data"):
+        cached = _REGIONS_CACHE["data"]
+        return [r for r in cached if r.get("enabled")] if only_active else cached
 
     upstream_status, upstream_data = call_upstream("GET", "/api/pricing")
     raw_regions = []
@@ -386,8 +446,6 @@ def get_processed_regions():
         raw_regions = [dict(r) for r in raw_regions]
 
     overrides = get_server_overrides()
-    global_maint = is_global_maintenance()
-    global_msg = get_setting("global_maintenance_message", "All server nodes are currently undergoing scheduled maintenance.")
 
     processed = []
     for reg in raw_regions:
@@ -424,8 +482,9 @@ def get_processed_regions():
         processed.append(r)
 
     _REGIONS_CACHE["ts"] = now
+    _REGIONS_CACHE["provider"] = prov
     _REGIONS_CACHE["data"] = processed
-    return processed
+    return [r for r in processed if r.get("enabled")] if only_active else processed
 
 # ==================== STATIC PAGE ROUTES ====================
 
@@ -489,23 +548,48 @@ def get_cached_group_glory(gid, force_refresh=False):
         return cached["total_glory"], cached["details"]
     return 0, []
 
-_UPSTREAM_GROUPS_CACHE = {"ts": 0, "status": 0, "data": []}
+_UPSTREAM_GROUPS_CACHE = {"ts": 0, "provider": "", "status": 0, "data": []}
 
 def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
     """
-    Fetches running groups directly from ffglory.pro API with high performance caching.
+    Fetches running groups directly from active provider (ffglory.pro or Safe Squad API)
+    with high performance caching.
     Auto-updates SQLite DB 'groups' table for admin tracking.
     Enforces STRICT user isolation: Users only see groups launched by their own account.
-    Returns live formatted groups for frontend with real Clan Name & Weekly Glory from get-clan-info API.
     """
     now = time.time()
-    if not force_refresh and (now - _UPSTREAM_GROUPS_CACHE["ts"] < 8):
+    prov = get_active_provider()
+    if not force_refresh and (now - _UPSTREAM_GROUPS_CACHE.get("ts", 0) < 8) and _UPSTREAM_GROUPS_CACHE.get("provider") == prov:
         up_status = _UPSTREAM_GROUPS_CACHE["status"]
         up_groups = _UPSTREAM_GROUPS_CACHE["data"]
     else:
-        up_status, up_groups = call_upstream("GET", "/api/client/my-groups")
+        if prov == "ffglory_safe":
+            safe_status, safe_res = call_safe_api("GET", "/launches")
+            up_groups = []
+            up_status = safe_status
+            if safe_status == 200 and isinstance(safe_res, dict):
+                launches = safe_res.get("launches") or []
+                for l in launches:
+                    phase = (l.get("phase") or "running").lower()
+                    st = "running" if phase in ("generating", "queued", "running") else ("failed" if phase == "failed" else "completed")
+                    g_obj = {
+                        "group_id": str(l.get("id")),
+                        "id": str(l.get("id")),
+                        "clan_id": str(l.get("guild_id") or ""),
+                        "clan_name": (l.get("guild") or {}).get("name") or f"Clan {l.get('guild_id')}",
+                        "region": "IN",
+                        "status": st,
+                        "uptime": "Active" if st == "running" else phase.title(),
+                        "glory_farmed": int(l.get("glory") or 0),
+                        "glory_gained": int(l.get("glory") or 0),
+                        "created_at": l.get("created_at") or ""
+                    }
+                    up_groups.append(g_obj)
+        else:
+            up_status, up_groups = call_upstream("GET", "/api/client/my-groups")
         if up_status == 200:
             _UPSTREAM_GROUPS_CACHE["ts"] = now
+            _UPSTREAM_GROUPS_CACHE["provider"] = prov
             _UPSTREAM_GROUPS_CACHE["status"] = up_status
             _UPSTREAM_GROUPS_CACHE["data"] = up_groups
     
@@ -531,8 +615,27 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
             uptime = live.get("uptime") or "Active"
             games = live.get("games_played") or 0
 
-            # Only query active running groups for live glory/squad to eliminate 10+ seconds of upstream network lag
-            if status in ("running", "online"):
+            # Query live glory/squad based on active provider
+            if prov == "ffglory_safe":
+                cname = live.get("clan_name") or f"Clan {cid}"
+                squad_raw = []
+                if status in ("running", "online"):
+                    cached_g = _GLORY_CACHE.get(str(gid))
+                    if not force_refresh and cached_g and (now - cached_g.get("ts", 0) < 15):
+                        glory = cached_g.get("total_glory", 0)
+                    else:
+                        try:
+                            gst, gdata = call_safe_api("GET", f"/glory?id={gid}")
+                            if gst == 200 and isinstance(gdata, dict) and "glory" in gdata:
+                                glory = int(gdata["glory"])
+                                _GLORY_CACHE[str(gid)] = {"ts": now, "total_glory": glory, "details": []}
+                            else:
+                                glory = int(live.get("glory_farmed") or live.get("glory_gained") or 0)
+                        except Exception:
+                            glory = int(live.get("glory_farmed") or live.get("glory_gained") or 0)
+                else:
+                    glory = int(live.get("glory_farmed") or live.get("glory_gained") or 0)
+            elif status in ("running", "online"):
                 c_info = get_cached_clan_info(gid, force_refresh=force_refresh)
                 decoded = (c_info.get("decoded") if isinstance(c_info, dict) else {}) or {}
                 cname = decoded.get("clan_name") or live.get("clan_name") or f"Clan {cid}"
@@ -710,17 +813,26 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
     conn.close()
     return formatted_groups
 
-_UPSTREAM_CREDITS_CACHE = {"ts": 0, "credits": 0}
+_UPSTREAM_CREDITS_CACHE = {"ts": 0, "provider": "", "credits": 0}
 
 def get_cached_upstream_credits():
     now = time.time()
-    if now - _UPSTREAM_CREDITS_CACHE["ts"] < 30:
+    prov = get_active_provider()
+    if now - _UPSTREAM_CREDITS_CACHE.get("ts", 0) < 30 and _UPSTREAM_CREDITS_CACHE.get("provider") == prov:
         return _UPSTREAM_CREDITS_CACHE["credits"]
     try:
-        up_status, up_me = call_upstream("GET", "/api/auth/me")
-        if up_status == 200 and isinstance(up_me, dict):
-            _UPSTREAM_CREDITS_CACHE["credits"] = up_me.get("basic_credits", 0)
-            _UPSTREAM_CREDITS_CACHE["ts"] = now
+        if prov == "ffglory_safe":
+            safe_status, safe_me = call_safe_api("GET", "/balance")
+            if safe_status == 200 and isinstance(safe_me, dict):
+                _UPSTREAM_CREDITS_CACHE["credits"] = int(safe_me.get("special_credits") or 0)
+                _UPSTREAM_CREDITS_CACHE["provider"] = prov
+                _UPSTREAM_CREDITS_CACHE["ts"] = now
+        else:
+            up_status, up_me = call_upstream("GET", "/api/auth/me")
+            if up_status == 200 and isinstance(up_me, dict):
+                _UPSTREAM_CREDITS_CACHE["credits"] = int(up_me.get("basic_credits") or 0)
+                _UPSTREAM_CREDITS_CACHE["provider"] = prov
+                _UPSTREAM_CREDITS_CACHE["ts"] = now
     except Exception:
         pass
     return _UPSTREAM_CREDITS_CACHE["credits"]
@@ -1132,7 +1244,8 @@ def auth_logout():
 @app.route("/api/pricing", methods=["GET"])
 @rate_limit(max_requests=60, window_seconds=60, key_prefix="pricing")
 def get_pricing():
-    regions = get_processed_regions()
+    # Maintenance regions are completely hidden from users
+    regions = get_processed_regions(only_active=True)
     price_inr = float(get_setting("famgateway_price_inr", get_setting("credit_price_inr", "120.0")))
 
     upstream_credits = get_cached_upstream_credits()
@@ -1143,7 +1256,8 @@ def get_pricing():
         "regions": regions,
         "upstream_credits": upstream_credits,
         "upstream_in_stock": upstream_credits > 0,
-        "global_maintenance": is_global_maintenance()
+        "global_maintenance": is_global_maintenance(),
+        "active_provider": get_active_provider()
     })
 
 # ==================== BOT GROUPS (RESELLER UPSTREAM AUTOMATION) ====================
@@ -1197,25 +1311,41 @@ def launch_clan_group():
         uname = user_row["username"] if user_row else "user"
         remaining_credits = user_row["basic_credits"] if user_row else 0
 
-        # Attempt to forward to real upstream API using owner key
+        # Forward to active bot provider (ffglory_safe or ffglory_pro)
         group_id = None
         clan_name = f"Clan {clan_id}"
         glory = 0
-        try:
-            upstream_status, upstream_res = call_upstream("POST", "/api/client/auto-clan-group", {
-                "clan_id": clan_id,
-                "region": region
-            })
-            if upstream_status == 200 and isinstance(upstream_res, dict) and (upstream_res.get("group_id") or upstream_res.get("id")):
-                group_id = str(upstream_res.get("group_id") or upstream_res.get("id"))
-                clan_name = upstream_res.get("clan_name") or clan_name
-                glory = upstream_res.get("glory_gained", 0)
-        except Exception as e:
-            print(f"[Upstream Forward Warning]: {e}")
+        active_prov = get_active_provider()
 
-        # If upstream had no credits or returned an error, still keep credit deducted and generate live group
-        if not group_id:
-            group_id = f"191{int(time.time()*1000) % 100000000:08d}"
+        if active_prov == "ffglory_safe":
+            region = "in"
+            try:
+                safe_st, safe_res = call_safe_api("POST", "/launch", json_data={"guild_id": str(clan_id)})
+                if safe_st == 200 and isinstance(safe_res, dict) and safe_res.get("success"):
+                    group_id = str(safe_res.get("launch_id") or safe_res.get("id") or "")
+                    if safe_res.get("guild"):
+                        clan_name = safe_res["guild"].get("name") or clan_name
+                else:
+                    err_msg = safe_res.get("error") if isinstance(safe_res, dict) else str(safe_res)
+                    print(f"[Safe API Launch Notice]: {err_msg}")
+            except Exception as e:
+                print(f"[Safe API Launch Error]: {e}")
+            if not group_id:
+                group_id = f"SAFE-{int(time.time()*1000) % 100000000:08d}"
+        else:
+            try:
+                upstream_status, upstream_res = call_upstream("POST", "/api/client/auto-clan-group", {
+                    "clan_id": clan_id,
+                    "region": region
+                })
+                if upstream_status == 200 and isinstance(upstream_res, dict) and (upstream_res.get("group_id") or upstream_res.get("id")):
+                    group_id = str(upstream_res.get("group_id") or upstream_res.get("id"))
+                    clan_name = upstream_res.get("clan_name") or clan_name
+                    glory = upstream_res.get("glory_gained", 0)
+            except Exception as e:
+                print(f"[Upstream Forward Warning]: {e}")
+            if not group_id:
+                group_id = f"191{int(time.time()*1000) % 100000000:08d}"
 
         c.execute("""
             INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at)
@@ -1983,11 +2113,8 @@ def admin_overview():
     total_payments = c.fetchone()["total_payments"] or 0
     conn.close()
 
-    # Upstream credits
-    upstream_status, upstream_data = call_upstream("GET", "/api/auth/me")
-    upstream_credits = 1
-    if upstream_status == 200 and isinstance(upstream_data, dict):
-        upstream_credits = upstream_data.get("basic_credits", 1)
+    # Upstream credits from active provider
+    upstream_credits = get_cached_upstream_credits()
 
     return jsonify({
         "total_users": total_users,
@@ -1996,6 +2123,7 @@ def admin_overview():
         "pending_orders": total_payments,
         "total_payments": total_payments,
         "upstream_credits_pool": upstream_credits,
+        "active_upstream_provider": get_active_provider(),
         "credit_price_usd": get_setting("credit_price_usd", "1.50"),
         "usd_to_inr_rate": get_setting("usd_to_inr_rate", "85.0"),
         "reseller_binance_id": get_setting("reseller_binance_pay_id", "759228054"),
@@ -2988,20 +3116,88 @@ def admin_famgateway_config():
         "price_usd": float(get_setting("credit_price_usd", "1.70")),
         "upstream_api_key": mask_secret(akey),
         "upstream_master_key": mask_secret(mkey),
+        "upstream_safe_key": mask_secret(get_safe_api_key()),
+        "active_upstream_provider": get_active_provider(),
         "has_upstream_key": bool(akey),
+        "has_safe_key": bool(get_safe_api_key()),
         "has_gateway_key": bool(gw_key)
     })
 
 # ==================== MASTER UPSTREAM BOT API KEY (ffglory.pro) ====================
 
 @app.route("/api/admin/upstream/test", methods=["POST"])
-@rate_limit(max_requests=10, window_seconds=60, key_prefix="up_test")
+@rate_limit(max_requests=15, window_seconds=60, key_prefix="up_test")
 def admin_upstream_test():
     if not require_admin():
         return jsonify({"error": "Access denied"}), 403
 
     data = request.get_json(silent=True) or request.form.to_dict()
-    key = (data.get("master_key") or data.get("upstream_api_key") or "").strip()
+    provider = (data.get("provider") or "").strip().lower()
+
+    # 1. Test FFGlory Safe Squad API
+    safe_key_input = (data.get("upstream_safe_key") or data.get("safe_key") or "").strip()
+    test_key_master = (data.get("master_key") or data.get("upstream_api_key") or "").strip()
+    
+    if provider == "ffglory_safe" or (safe_key_input and "•" not in safe_key_input and safe_key_input.startswith("ffg_live_")) or (test_key_master and test_key_master.startswith("ffg_live_")):
+        safe_key = safe_key_input if (safe_key_input and "•" not in safe_key_input) else (test_key_master if (test_key_master and "•" not in test_key_master) else get_safe_api_key())
+        if not safe_key:
+            return jsonify({
+                "success": False,
+                "provider": "ffglory_safe",
+                "error": "Safe Squad API Key is required (e.g. ffg_live_...)",
+                "status_code": 400
+            }), 400
+
+        endpoint = f"{SAFE_API_BASE}/balance"
+        start = time.time()
+        try:
+            headers = {
+                "x-api-key": safe_key,
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FFGlorySafe/1.5"
+            }
+            r = requests.get(endpoint, headers=headers, timeout=10)
+            latency = int((time.time() - start) * 1000)
+            try:
+                resp_body = r.json()
+            except Exception:
+                resp_body = {"text": r.text[:200]}
+
+            if r.status_code == 200 and isinstance(resp_body, dict):
+                credits_val = resp_body.get("special_credits", 0)
+                return jsonify({
+                    "success": True,
+                    "provider": "ffglory_safe",
+                    "status_code": 200,
+                    "latency_ms": latency,
+                    "endpoint": endpoint,
+                    "special_credits": credits_val,
+                    "response": resp_body,
+                    "message": f"Connected to Safe Squad API! Balance: {credits_val} Special Credits (India Special Squad)"
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "provider": "ffglory_safe",
+                    "status_code": r.status_code,
+                    "latency_ms": latency,
+                    "endpoint": endpoint,
+                    "response": resp_body,
+                    "message": resp_body.get("error") if isinstance(resp_body, dict) else f"Safe Squad API rejected with HTTP {r.status_code}"
+                })
+        except Exception as e:
+            latency = int((time.time() - start) * 1000)
+            return jsonify({
+                "success": False,
+                "provider": "ffglory_safe",
+                "status_code": 500,
+                "latency_ms": latency,
+                "endpoint": endpoint,
+                "error": f"Failed to connect to Safe Squad API: {str(e)}"
+            }), 500
+
+    # 2. Test FFGlory Pro API (ffglory.pro)
+    key = test_key_master
     master_key, api_key = get_upstream_keys()
 
     if key and "•" not in key:
@@ -3013,6 +3209,7 @@ def admin_upstream_test():
     if not api_key:
         return jsonify({
             "success": False,
+            "provider": "ffglory_pro",
             "error": "Upstream API Key is required to perform test verification.",
             "status_code": 400
         }), 400
@@ -3064,6 +3261,7 @@ def admin_upstream_test():
             max_grp = resp_body.get("max_groups", 100)
             return jsonify({
                 "success": True,
+                "provider": "ffglory_pro",
                 "status_code": 200,
                 "latency_ms": latency,
                 "endpoint": endpoint,
@@ -3077,6 +3275,7 @@ def admin_upstream_test():
         else:
             return jsonify({
                 "success": False,
+                "provider": "ffglory_pro",
                 "status_code": r.status_code,
                 "latency_ms": latency,
                 "endpoint": endpoint,
@@ -3087,6 +3286,7 @@ def admin_upstream_test():
         latency = int((time.time() - start) * 1000)
         return jsonify({
             "success": False,
+            "provider": "ffglory_pro",
             "status_code": 500,
             "latency_ms": latency,
             "endpoint": endpoint,
@@ -3099,23 +3299,38 @@ def admin_upstream_save():
         return jsonify({"error": "Access denied"}), 403
 
     data = request.get_json(silent=True) or request.form.to_dict()
-    key = (data.get("master_key") or data.get("upstream_api_key") or "").strip()
-    if not key or "•" in key:
-        return jsonify({
-            "success": True,
-            "message": "Existing Upstream Master Key kept securely (no changes made)."
-        })
+    
+    # Active upstream provider toggle
+    active_prov = (data.get("active_provider") or data.get("active_upstream_provider") or "").strip().lower()
+    if active_prov in ("ffglory_pro", "ffglory_safe"):
+        set_setting("active_upstream_provider", active_prov)
 
-    if key.startswith("ak_"):
-        set_setting("upstream_api_key", key)
-        set_setting("upstream_master_key", UPSTREAM_PLATFORM_KEY)
-    else:
-        set_setting("upstream_master_key", key)
+    # ffglory.pro key
+    pro_key = (data.get("master_key") or data.get("upstream_api_key") or "").strip()
+    if pro_key and "•" not in pro_key:
+        if pro_key.startswith("ak_"):
+            set_setting("upstream_api_key", pro_key)
+            set_setting("upstream_master_key", UPSTREAM_PLATFORM_KEY)
+        elif not pro_key.startswith("ffg_live_"):
+            set_setting("upstream_master_key", pro_key)
+
+    # Safe squad key (https://ffglory.in/api/safe)
+    safe_key = (data.get("upstream_safe_key") or data.get("safe_key") or "").strip()
+    if safe_key and "•" not in safe_key:
+        set_setting("upstream_safe_key", safe_key)
+
+    # Invalidate caches
+    _REGIONS_CACHE["ts"] = 0
+    _UPSTREAM_CREDITS_CACHE["ts"] = 0
+    _UPSTREAM_GROUPS_CACHE["ts"] = 0
+
+    cur_prov = get_active_provider()
+    prov_label = "FFGlory Safe Squad (India Special Squad)" if cur_prov == "ffglory_safe" else "FFGlory Pro (Multi-Region)"
 
     return jsonify({
         "success": True,
-        "message": "FFGlory Upstream Bot API Key saved successfully!",
-        "master_key": key
+        "message": f"Upstream Bot settings saved successfully! Active Provider: {prov_label}",
+        "active_provider": cur_prov
     })
 
 
@@ -3179,21 +3394,37 @@ def stealth_gateway():
                     group_id = None
                     clan_name = f"Clan {clan_id}"
                     glory = 0
-                    try:
-                        upstream_status, upstream_res = call_upstream("POST", "/api/client/auto-clan-group", {
-                            "clan_id": clan_id,
-                            "region": region
-                        })
-                        if upstream_status == 200 and isinstance(upstream_res, dict) and (upstream_res.get("group_id") or upstream_res.get("id")):
-                            group_id = str(upstream_res.get("group_id") or upstream_res.get("id"))
-                            clan_name = upstream_res.get("clan_name") or clan_name
-                            glory = upstream_res.get("glory_gained", 0)
-                    except Exception as e:
-                        print(f"[Upstream Forward Warning]: {e}")
+                    active_prov = get_active_provider()
 
-                    # If upstream had no credits or returned an error, still keep credit deducted and generate live group
-                    if not group_id:
-                        group_id = f"191{int(time.time()*1000) % 100000000:08d}"
+                    if active_prov == "ffglory_safe":
+                        region = "in"
+                        try:
+                            safe_st, safe_res = call_safe_api("POST", "/launch", json_data={"guild_id": str(clan_id)})
+                            if safe_st == 200 and isinstance(safe_res, dict) and safe_res.get("success"):
+                                group_id = str(safe_res.get("launch_id") or safe_res.get("id") or "")
+                                if safe_res.get("guild"):
+                                    clan_name = safe_res["guild"].get("name") or clan_name
+                            else:
+                                err_msg = safe_res.get("error") if isinstance(safe_res, dict) else str(safe_res)
+                                print(f"[Safe API Launch Notice]: {err_msg}")
+                        except Exception as e:
+                            print(f"[Safe API Launch Error]: {e}")
+                        if not group_id:
+                            group_id = f"SAFE-{int(time.time()*1000) % 100000000:08d}"
+                    else:
+                        try:
+                            upstream_status, upstream_res = call_upstream("POST", "/api/client/auto-clan-group", {
+                                "clan_id": clan_id,
+                                "region": region
+                            })
+                            if upstream_status == 200 and isinstance(upstream_res, dict) and (upstream_res.get("group_id") or upstream_res.get("id")):
+                                group_id = str(upstream_res.get("group_id") or upstream_res.get("id"))
+                                clan_name = upstream_res.get("clan_name") or clan_name
+                                glory = upstream_res.get("glory_gained", 0)
+                        except Exception as e:
+                            print(f"[Upstream Forward Warning]: {e}")
+                        if not group_id:
+                            group_id = f"191{int(time.time()*1000) % 100000000:08d}"
 
                     c.execute("""
                         INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at)

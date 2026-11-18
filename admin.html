@@ -1363,40 +1363,88 @@
                     </form>
                 </div>
 
-                <!-- Dedicated Card: Master Upstream Bot API Key (ffglory.pro) -->
+                <!-- Dedicated Card: Upstream Bot Providers (FFGlory Pro & FFGlory Safe Squad) -->
                 <div class="ng-card p-6 border border-[var(--ui-border)] max-w-2xl mt-5">
                     <div class="flex items-center justify-between pb-4 border-b border-gray-800 mb-5 flex-wrap gap-2">
                         <div>
                             <h3 class="font-['Rajdhani'] font-bold text-2xl text-white flex items-center gap-2">
-                                <span class="px-2.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/40">ffglory.pro</span>
-                                <span>Master Upstream Bot API Key</span>
+                                <span class="px-2.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-xs font-bold border border-blue-500/40">2 Providers</span>
+                                <span>Upstream Bot API Providers</span>
                             </h3>
-                            <p class="text-xs text-gray-400 mt-1">This key connects to <strong>ffglory.pro</strong> to launch automated glory bots for clans. Test status or set below.</p>
+                            <p class="text-xs text-gray-400 mt-1">Configure both bot providers and switch which one is active (1 active at a time).</p>
                         </div>
                     </div>
 
-                    <form onsubmit="adminSaveMasterKey(event)" class="space-y-4">
-                        <div>
-                            <label class="ng-form-label text-xs">Master Upstream Bot API Key <span class="text-amber-400">*</span></label>
-                            <div class="relative">
-                                <input type="text" id="setting-master-key" placeholder="Enter ffglory.pro Master API Key (e.g. ak_... or fam_...)" class="ng-input font-mono text-xs" required>
+                    <form onsubmit="adminSaveUpstreamProviders(event)" class="space-y-6">
+                        <!-- Provider Switcher: 1 active at a time -->
+                        <div class="p-4 rounded-xl bg-gray-900/60 border border-gray-800">
+                            <label class="ng-form-label text-xs font-bold text-white mb-2 block">Active Bot Provider (Choose 1 Active Provider)</label>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                                <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-800 bg-black/40 hover:border-amber-500/50 cursor-pointer transition-all">
+                                    <input type="radio" name="active_provider_radio" id="prov-radio-pro" value="ffglory_pro" class="mt-1 text-amber-500 focus:ring-amber-500">
+                                    <div>
+                                        <div class="text-xs font-bold text-white flex items-center gap-1.5">
+                                            <span>🌐 FFGlory Pro</span>
+                                            <span class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">Standard</span>
+                                        </div>
+                                        <p class="text-[11px] text-gray-400 mt-0.5">Multi-region bot cluster (BD, PK, IN, INDO, etc.) via ffglory.pro</p>
+                                    </div>
+                                </label>
+                                <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-800 bg-black/40 hover:border-emerald-500/50 cursor-pointer transition-all">
+                                    <input type="radio" name="active_provider_radio" id="prov-radio-safe" value="ffglory_safe" class="mt-1 text-emerald-500 focus:ring-emerald-500">
+                                    <div>
+                                        <div class="text-xs font-bold text-white flex items-center gap-1.5">
+                                            <span>🇮🇳 FFGlory Safe Squad</span>
+                                            <span class="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">India Only</span>
+                                        </div>
+                                        <p class="text-[11px] text-gray-400 mt-0.5">Special Safe Squad API strictly for India via ffglory.in/api/safe</p>
+                                    </div>
+                                </label>
                             </div>
-                            <p class="text-[10px] text-gray-500 mt-1">Used by the backend to trigger clan bots. Click <strong>Test</strong> to probe ffglory.pro and <strong>Set</strong> to save.</p>
                         </div>
 
-                        <div class="pt-2 flex items-center gap-3 flex-wrap">
-                            <button type="button" id="btn-test-master-key" onclick="adminTestMasterKey()" class="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 transition-all">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                                <span>🧪 Test Master Key</span>
+                        <!-- Provider 1: FFGlory Pro -->
+                        <div class="p-4 rounded-xl border border-gray-800/80 bg-black/20 space-y-3">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                                    <span>🌐 Provider 1: FFGlory Pro API Key</span>
+                                </span>
+                                <span class="text-[10px] text-gray-500 font-mono">ffglory.pro</span>
+                            </div>
+                            <div>
+                                <input type="text" id="setting-master-key" placeholder="Enter ffglory.pro Master API Key (e.g. ak_...)" class="ng-input font-mono text-xs">
+                                <p class="text-[10px] text-gray-500 mt-1">Multi-region glory bot key for ffglory.pro</p>
+                            </div>
+                            <button type="button" id="btn-test-master-key" onclick="adminTestMasterKey()" class="px-4 py-2 rounded-lg bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-500/30 font-bold text-xs flex items-center gap-2 transition-all">
+                                <span>🧪 Test FFGlory Pro Key</span>
                             </button>
-                            <button type="submit" id="btn-save-master-key" class="ng-btn-primary px-6 py-2.5 text-xs font-bold flex items-center gap-2">
+                            <div id="admin-master-key-test-result" class="hidden p-3 rounded-xl bg-black border border-gray-800 font-mono text-[11px] text-gray-300 space-y-1"></div>
+                        </div>
+
+                        <!-- Provider 2: FFGlory Safe Squad (India Special Squad) -->
+                        <div class="p-4 rounded-xl border border-gray-800/80 bg-black/20 space-y-3">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                                    <span>🇮🇳 Provider 2: Safe Squad API Key (India Special Squad)</span>
+                                </span>
+                                <span class="text-[10px] text-gray-500 font-mono">ffglory.in/api/safe</span>
+                            </div>
+                            <div>
+                                <input type="text" id="setting-safe-key" placeholder="Enter Safe Squad API Key (e.g. ffg_live_...)" class="ng-input font-mono text-xs">
+                                <p class="text-[10px] text-gray-500 mt-1">Special Safe Squad bot key strictly for India (ffglory.in/api/safe)</p>
+                            </div>
+                            <button type="button" id="btn-test-safe-key" onclick="adminTestSafeKey()" class="px-4 py-2 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 border border-emerald-500/30 font-bold text-xs flex items-center gap-2 transition-all">
+                                <span>🧪 Test Safe Squad Key</span>
+                            </button>
+                            <div id="admin-safe-key-test-result" class="hidden p-3 rounded-xl bg-black border border-gray-800 font-mono text-[11px] text-gray-300 space-y-1"></div>
+                        </div>
+
+                        <div class="pt-2">
+                            <button type="submit" id="btn-save-master-key" class="ng-btn-primary w-full py-3 text-xs font-bold flex items-center justify-center gap-2">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                                <span>💾 Set &amp; Save Master Key</span>
+                                <span>💾 Save Upstream Provider Settings</span>
                             </button>
                         </div>
-
-                        <!-- Real-time Test Output Box -->
-                        <div id="admin-master-key-test-result" class="hidden p-3 rounded-xl bg-black border border-gray-800 font-mono text-[11px] text-gray-300 space-y-1"></div>
                     </form>
                 </div>
 
@@ -2253,6 +2301,16 @@
                 if (cPriceUsd) cPriceUsd.value = s.price_usd || '1.70';
                 if (upstreamEl) upstreamEl.value = s.upstream_api_key || '';
                 if (masterKeyEl) masterKeyEl.value = s.upstream_api_key || '';
+                const safeKeyEl = document.getElementById('setting-safe-key');
+                if (safeKeyEl) safeKeyEl.value = s.upstream_safe_key || '';
+                const curProv = s.active_upstream_provider || 'ffglory_pro';
+                const rPro = document.getElementById('prov-radio-pro');
+                const rSafe = document.getElementById('prov-radio-safe');
+                if (curProv === 'ffglory_safe') {
+                    if (rSafe) rSafe.checked = true;
+                } else {
+                    if (rPro) rPro.checked = true;
+                }
             }
 
             // Load contact settings
@@ -2338,15 +2396,71 @@
         }
     }
 
-    async function adminSaveMasterKey(e) {
-        if (e && e.preventDefault) e.preventDefault();
-        const key = document.getElementById('setting-master-key')?.value.trim();
-        const btn = document.getElementById('btn-save-master-key');
+    async function adminTestSafeKey() {
+        const key = document.getElementById('setting-safe-key')?.value.trim();
+        const btn = document.getElementById('btn-test-safe-key');
+        const outBox = document.getElementById('admin-safe-key-test-result');
 
         if (!key) {
-            showToast('Please enter Master Key', 'error');
+            showToast('Please enter Safe Squad API Key (ffg_live_...) first', 'error');
             return;
         }
+
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="inline-block animate-spin mr-1">⚙</span> Testing Safe Squad API...';
+        }
+        if (outBox) {
+            outBox.classList.remove('hidden');
+            outBox.innerHTML = '<span class="text-amber-400">Connecting to Safe Squad API (ffglory.in/api/safe)...</span>';
+        }
+
+        try {
+            const res = await fetch('/api/admin/upstream/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: 'ffglory_safe', safe_key: key })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast('Safe Squad API Key verified!', 'success');
+                if (outBox) {
+                    outBox.innerHTML = `
+                        <div class="text-emerald-400 font-bold">✓ Connected to Safe Squad API Successfully!</div>
+                        <div class="text-xs text-emerald-300 font-medium">Special Credits: <span class="text-white font-bold">${data.special_credits ?? 0}</span> | Region: <span class="text-white font-bold">India (Special Safe Squad)</span></div>
+                        <div class="text-gray-300 text-xs mt-1">HTTP Status: <span class="text-emerald-300 font-bold">${data.status_code}</span> | Latency: <span class="text-yellow-300 font-bold">${data.latency_ms}ms</span></div>
+                        <div class="text-[10px] text-gray-500 mt-0.5">Endpoint: ${data.endpoint}</div>
+                    `;
+                }
+            } else {
+                showToast(`Probe result: HTTP ${data.status_code || 500}`, 'error');
+                if (outBox) {
+                    outBox.innerHTML = `
+                        <div class="text-red-400 font-bold">✗ Response from Safe Squad: HTTP ${data.status_code || 500}</div>
+                        <div class="text-gray-300">${data.message || data.error || 'Key probe failed'}</div>
+                        <div class="text-[10px] text-gray-500">Latency: ${data.latency_ms || 0}ms</div>
+                    `;
+                }
+            }
+        } catch (e) {
+            showToast('Network error testing Safe Squad key', 'error');
+            if (outBox) {
+                outBox.innerHTML = `<div class="text-red-400">Network connection failed: ${e.message}</div>`;
+            }
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = `<span>🧪 Test Safe Squad Key</span>`;
+            }
+        }
+    }
+
+    async function adminSaveUpstreamProviders(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        const proKey = document.getElementById('setting-master-key')?.value.trim();
+        const safeKey = document.getElementById('setting-safe-key')?.value.trim();
+        const activeProv = document.getElementById('prov-radio-safe')?.checked ? 'ffglory_safe' : 'ffglory_pro';
+        const btn = document.getElementById('btn-save-master-key');
 
         if (btn) {
             btn.disabled = true;
@@ -2357,23 +2471,29 @@
             const res = await fetch('/api/admin/upstream/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ master_key: key })
+                body: JSON.stringify({
+                    active_provider: activeProv,
+                    master_key: proKey,
+                    upstream_safe_key: safeKey
+                })
             });
             const data = await res.json();
             if (data.success) {
-                showToast('Master Upstream API Key saved successfully!', 'success');
+                showToast(data.message || 'Upstream provider settings saved!', 'success');
             } else {
-                showToast(data.error || 'Failed to save master key', 'error');
+                showToast(data.error || 'Failed to save upstream settings', 'error');
             }
         } catch (e) {
-            showToast('Network error saving master key', 'error');
+            showToast('Network error saving upstream settings', 'error');
         } finally {
             if (btn) {
                 btn.disabled = false;
-                btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> <span>💾 Set &amp; Save Master Key</span>`;
+                btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> <span>💾 Save Upstream Provider Settings</span>`;
             }
         }
     }
+
+    const adminSaveMasterKey = adminSaveUpstreamProviders;
 
     async function adminSaveContactSettings(e) {
         if (e && e.preventDefault) e.preventDefault();
