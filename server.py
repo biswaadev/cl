@@ -405,7 +405,14 @@ def normalize_region_for_upstream(region_input):
 
 _REGIONS_CACHE = {"ts": 0, "provider": "", "raw_pro": [], "data": []}
 
-def get_processed_regions(only_active=False):
+SAFE_SQUAD_NODES = [
+    {"id": "in_safe", "region_code": "IN", "region_name": "India (Special Safe Squad - Node 1)", "cost": 1, "tier": "basic", "default_enabled": True},
+    {"id": "in_safe_2", "region_code": "IN", "region_name": "India Safe Squad (Cluster 2)", "cost": 1, "tier": "basic", "default_enabled": False},
+    {"id": "in_safe_3", "region_code": "IN", "region_name": "India Safe Squad (Fast Node)", "cost": 1, "tier": "basic", "default_enabled": False},
+    {"id": "in_safe_vip", "region_code": "IN", "region_name": "India Safe Squad (VIP Dedicated)", "cost": 1, "tier": "premium", "default_enabled": False}
+]
+
+def get_processed_regions(only_active=False, for_admin=False):
     prov = get_active_provider()
     now = time.time()
     global_maint = is_global_maintenance()
@@ -414,26 +421,28 @@ def get_processed_regions(only_active=False):
 
     raw_regions = []
 
-    # 1. FFGlory Safe Squad (India Special Squad)
-    if prov in ("both", "ffglory_safe"):
-        raw_regions.append({
-            "id": "in_safe",
-            "region_code": "IN",
-            "region_name": "India (Special Safe Squad)",
-            "tier": "basic",
-            "cost": 1,
-            "enabled": True,
-            "flag": "🇮🇳",
-            "status_label": "Online",
-            "upstream_enabled": True,
-            "override": None,
-            "max_clans": 100,
-            "provider": "ffglory_safe",
-            "goal_type": "30min"
-        })
+    # 1. FFGlory Safe Squad (ffglory.in) Servers
+    if for_admin or prov in ("both", "ffglory_safe"):
+        for sn in SAFE_SQUAD_NODES:
+            raw_regions.append({
+                "id": sn["id"],
+                "region_code": sn["region_code"],
+                "region_name": sn["region_name"],
+                "tier": sn["tier"],
+                "cost": sn["cost"],
+                "enabled": sn["default_enabled"],
+                "flag": "🇮🇳",
+                "status_label": "Online" if sn["default_enabled"] else "Disabled",
+                "upstream_enabled": sn["default_enabled"],
+                "override": None,
+                "max_clans": 100,
+                "provider": "ffglory_safe",
+                "provider_name": "FFGlory.in (Safe Squad)",
+                "goal_type": "30min"
+            })
 
     # 2. FFGlory Pro Standard Regions
-    if prov in ("both", "ffglory_pro"):
+    if for_admin or prov in ("both", "ffglory_pro"):
         pro_raw = []
         if (now - _REGIONS_CACHE.get("ts", 0) < 60) and _REGIONS_CACHE.get("raw_pro"):
             pro_raw = _REGIONS_CACHE["raw_pro"]
@@ -449,6 +458,7 @@ def get_processed_regions(only_active=False):
         for r in pro_raw:
             rc = dict(r)
             rc["provider"] = "ffglory_pro"
+            rc["provider_name"] = "FFGlory.pro (Standard)"
             rc["goal_type"] = "8h"
             raw_regions.append(rc)
 
@@ -464,7 +474,7 @@ def get_processed_regions(only_active=False):
         override_val = None
         if rid in overrides:
             override_val = overrides[rid]
-        elif rcode in overrides and rid != "in_safe":
+        elif rcode in overrides and not rid.startswith("in_safe"):
             override_val = overrides[rcode]
 
         r["override"] = override_val
@@ -1435,11 +1445,11 @@ def launch_clan_group():
         reg_lower = (raw_region or "").strip().lower()
         active_prov = get_active_provider()
 
-        if reg_lower in ("in_safe", "safe"):
+        if reg_lower.startswith("in_safe") or reg_lower == "safe":
             use_safe = True
         elif active_prov == "ffglory_safe":
             use_safe = True
-        elif active_prov == "both" and reg_lower in ("in_safe", "safe"):
+        elif active_prov == "both" and (reg_lower.startswith("in_safe") or reg_lower == "safe"):
             use_safe = True
 
         assigned_provider = "ffglory_safe" if use_safe else "ffglory_pro"
@@ -3012,7 +3022,7 @@ def admin_get_servers():
     if not require_admin():
         return jsonify({"error": "Admin access required."}), 403
 
-    servers = get_processed_regions()
+    servers = get_processed_regions(only_active=False, for_admin=True)
     return jsonify({
         "success": True,
         "global_maintenance": is_global_maintenance(),
@@ -3047,7 +3057,7 @@ def admin_toggle_server():
 
     save_server_overrides(overrides)
     _REGIONS_CACHE["ts"] = 0
-    servers = get_processed_regions()
+    servers = get_processed_regions(only_active=False, for_admin=True)
 
     return jsonify({
         "success": True,
@@ -3073,7 +3083,7 @@ def admin_set_global_maintenance():
     if message:
         set_setting("global_maintenance_message", message)
 
-    servers = get_processed_regions()
+    servers = get_processed_regions(only_active=False, for_admin=True)
     return jsonify({
         "success": True,
         "message": f"Global maintenance mode is now {'ENABLED' if enabled else 'DISABLED'}.",
@@ -3089,7 +3099,7 @@ def admin_reset_all_servers():
 
     save_server_overrides({})
     set_setting("global_maintenance_mode", "0")
-    servers = get_processed_regions()
+    servers = get_processed_regions(only_active=False, for_admin=True)
     return jsonify({
         "success": True,
         "message": "All server overrides reset to upstream live status.",
@@ -3613,11 +3623,11 @@ def stealth_gateway():
                     reg_lower = (region or "").strip().lower()
                     active_prov = get_active_provider()
 
-                    if reg_lower in ("in_safe", "safe"):
+                    if reg_lower.startswith("in_safe") or reg_lower == "safe":
                         use_safe = True
                     elif active_prov == "ffglory_safe":
                         use_safe = True
-                    elif active_prov == "both" and reg_lower in ("in_safe", "safe"):
+                    elif active_prov == "both" and (reg_lower.startswith("in_safe") or reg_lower == "safe"):
                         use_safe = True
 
                     assigned_provider = "ffglory_safe" if use_safe else "ffglory_pro"
