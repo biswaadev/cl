@@ -994,7 +994,7 @@ def get_user_dashboard_state(user_id):
     }
 
     alerts = {
-        "active": True,
+        "active": (get_setting("broadcast_active", "0") == "1"),
         "title": get_setting("broadcast_title", "Glory Boost Active"),
         "message": get_setting("broadcast_message", "All server nodes are functioning normally across all regions.")
     }
@@ -1730,7 +1730,9 @@ def client_famgateway_create_order():
                 "api_key": api_key,
                 "amount": total_inr,
                 "customer_name": username,
-                "redirect_url": request.host_url.rstrip("/") + "/#transactions"
+                "redirect_url": request.host_url.rstrip("/") + "/#transactions",
+                "validity": 10,
+                "expiry_minutes": 10
             }
             res = requests.post(f"{base_url}/api/create-order", json=req_body, headers={"Content-Type": "application/json"}, timeout=8)
             if res.status_code == 200:
@@ -1787,7 +1789,9 @@ def client_famgateway_create_order():
         "gateway_connected": gateway_connected,
         "gateway_msg": gateway_msg,
         "created_at_ist": created_at_ist,
-        "expires_at_ist": expires_at_ist
+        "expires_at_ist": expires_at_ist,
+        "validity_minutes": 10,
+        "validity_seconds": 600
     })
 
 @app.route("/api/client/famgateway/verify-order", methods=["POST"])
@@ -2680,7 +2684,7 @@ def admin_pending_orders():
 
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT * FROM transactions ORDER BY created_at DESC LIMIT 100")
+    c.execute("SELECT * FROM transactions WHERE status IN ('approved', 'success', 'completed') ORDER BY created_at DESC LIMIT 100")
     rows = c.fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
@@ -2795,10 +2799,70 @@ def admin_firebase_status():
     return jsonify({
         "status": "connected" if bool(firebase_sync.get_secret()) else "unconfigured",
         "has_secret": bool(firebase_sync.get_secret()),
+        "firebase_db_url": firebase_sync.get_db_url(),
         "last_sync_time": firebase_sync._last_sync_time,
         "last_sync_formatted": time.ctime(firebase_sync._last_sync_time) if firebase_sync._last_sync_time else "Never",
         "sync_status": firebase_sync._last_sync_status,
         "error": firebase_sync._last_sync_error
+    })
+
+@app.route("/api/admin/firebase/config", methods=["GET", "POST"])
+def admin_firebase_config():
+    if not require_admin():
+        return jsonify({"error": "Access denied"}), 403
+    import firebase_sync
+
+    if request.method == "GET":
+        db_url = firebase_sync.get_db_url()
+        secret = firebase_sync.get_secret()
+        masked_secret = (secret[:4] + "*" * (len(secret) - 8) + secret[-4:]) if len(secret) > 8 else ("*" * len(secret))
+        return jsonify({
+            "firebase_db_url": db_url,
+            "firebase_db_secret": secret,
+            "masked_secret": masked_secret,
+            "status": "connected" if bool(secret) else "unconfigured",
+            "sync_status": firebase_sync._last_sync_status,
+            "last_sync_time": firebase_sync._last_sync_time,
+            "last_sync_formatted": time.ctime(firebase_sync._last_sync_time) if firebase_sync._last_sync_time else "Never",
+            "error": firebase_sync._last_sync_error
+        })
+
+    data = request.get_json(silent=True) or request.form.to_dict()
+    db_url = data.get("firebase_db_url", "").strip()
+    db_secret = data.get("firebase_db_secret", "").strip()
+    init_if_empty = data.get("init_if_empty", True)
+    if isinstance(init_if_empty, str):
+        init_if_empty = init_if_empty.lower() in ("true", "1", "yes", "on")
+
+    current_user = None
+    if session.get("user_id"):
+        try:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT id, username, role FROM users WHERE id = ?", (session.get("user_id"),))
+            row = c.fetchone()
+            conn.close()
+            if row:
+                current_user = dict(row)
+        except Exception:
+            pass
+
+    success, message, extra = firebase_sync.configure_firebase(
+        db_url=db_url,
+        db_secret=db_secret,
+        init_if_empty=init_if_empty,
+        current_user=current_user
+    )
+
+    if not success:
+        return jsonify({"success": False, "error": message}), 400
+
+    return jsonify({
+        "success": True,
+        "message": message,
+        "data": extra,
+        "status": "connected",
+        "last_sync_formatted": time.ctime(firebase_sync._last_sync_time) if firebase_sync._last_sync_time else "Just now"
     })
 
 @app.route("/api/admin/firebase/sync", methods=["POST"])
@@ -3051,11 +3115,16 @@ def admin_broadcast():
         return jsonify({"error": "Access denied"}), 403
 
     data = request.get_json(silent=True) or request.form.to_dict()
-    set_setting("broadcast_active", "1" if data.get("active") else "0")
-    set_setting("broadcast_title", data.get("title", ""))
-    set_setting("broadcast_message", data.get("message", ""))
+    is_active = "1" if (data.get("active") is True or str(data.get("active")).lower() in ("true", "1", "on")) else "0"
+    set_setting("broadcast_active", is_active)
+    set_setting("broadcast_title", (data.get("title") or "").strip())
+    set_setting("broadcast_message", (data.get("message") or "").strip())
+    try:
+        trigger_async_sync()
+    except Exception:
+        pass
 
-    return jsonify({"success": True, "message": "Broadcast alert saved and active."})
+    return jsonify({"success": True, "message": "Broadcast alert saved and active.", "active": is_active == "1"})
 
 # ==================== ADMIN SERVER & REGION MANAGEMENT ENDPOINTS ====================
 

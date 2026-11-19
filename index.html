@@ -1773,20 +1773,34 @@
 
                                         <!-- Centered QR & Checkout Box -->
                                         <div class="p-5 rounded-2xl bg-black/50 border border-emerald-500/30 space-y-5 text-center mt-4">
-                                            <!-- Payable Amount Badge -->
-                                            <div class="inline-flex flex-col items-center justify-center px-6 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                                                <span class="text-[10px] text-emerald-400/80 uppercase font-semibold tracking-wider">Payable Amount</span>
-                                                <span class="text-3xl font-['Rajdhani'] font-bold text-emerald-300">₹<span id="fg-display-amount">600</span> <small class="text-xs text-gray-400 font-sans">INR</small></span>
+                                            <!-- Payable Amount Badge & Validity Timer -->
+                                            <div class="flex items-center justify-center gap-3 flex-wrap">
+                                                <div class="inline-flex flex-col items-center justify-center px-6 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                                                    <span class="text-[10px] text-emerald-400/80 uppercase font-semibold tracking-wider">Payable Amount</span>
+                                                    <span class="text-3xl font-['Rajdhani'] font-bold text-emerald-300">₹<span id="fg-display-amount">600</span> <small class="text-xs text-gray-400 font-sans">INR</small></span>
+                                                </div>
+                                                <div id="fg-qr-timer-box" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
+                                                    <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                                                    <span>QR Validity: <strong id="fg-qr-timer" class="font-mono text-white text-sm">10:00</strong> mins</span>
+                                                </div>
                                             </div>
 
-                                            <!-- Centered High-Res QR Code Card -->
+                                            <!-- Centered High-Res QR Code Card with Expiry Overlay -->
                                             <div class="flex flex-col items-center justify-center">
-                                                <div class="p-3 bg-white rounded-2xl shadow-2xl border-2 border-emerald-500/40 inline-block">
+                                                <div class="p-3 bg-white rounded-2xl shadow-2xl border-2 border-emerald-500/40 inline-block relative overflow-hidden" id="fg-qr-wrap">
                                                     <img id="fg-qr-img" src="" width="160" height="160" alt="UPI QR Code" class="rounded-xl object-contain mx-auto block">
+                                                    <div id="fg-qr-expired-overlay" class="hidden absolute inset-0 bg-black/90 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center p-3 text-center z-10">
+                                                        <span class="text-2xl mb-1">⏳</span>
+                                                        <span class="text-xs font-bold text-red-400">QR Expired</span>
+                                                        <span class="text-[10px] text-gray-300 mt-0.5">10-min validity ended</span>
+                                                        <button type="button" onclick="generateFamGatewayOrder()" class="mt-2.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-lg transition-all cursor-pointer">
+                                                            🔄 Generate New QR
+                                                        </button>
+                                                    </div>
                                                 </div>
                                                 <p class="text-[11px] text-gray-400 mt-2.5 flex items-center justify-center gap-1.5 font-medium">
                                                     <svg class="w-3.5 h-3.5 text-emerald-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-                                                    Point phone camera or any UPI app to scan
+                                                    Point phone camera or any UPI app to scan (Valid for 10 minutes)
                                                 </p>
                                             </div>
 
@@ -2176,13 +2190,22 @@
                                     </div>
                                 </div>
                                 <button type="submit" id="launch-btn"
-                                    class="w-full ng-btn-success py-3.5 font-semibold flex items-center justify-center gap-2">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                    </svg>
-                                    <span id="launch-btn-text">Start Group (1 Premium Credit)</span>
+                                    class="w-full ng-btn-success py-3.5 font-semibold flex items-center justify-center gap-2 transition-all">
+                                    <span id="launch-btn-icon">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                        </svg>
+                                    </span>
+                                    <span id="launch-btn-text">Start Group (1 Credit)</span>
                                 </button>
+                                <div id="insufficient-credits-hint" class="hidden mt-2.5 p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
+                                    <p class="text-xs text-amber-300 font-medium flex items-center justify-center gap-1.5">
+                                        <span>⚠️</span>
+                                        <span>Need credits?</span>
+                                        <button type="button" onclick="openBuyCredits()" class="underline font-bold text-amber-200 hover:text-white transition-colors">Click here to Buy Credits Directly ↗</button>
+                                    </p>
+                                </div>
                             </form>
                             <p id="launch-msg" class="mt-3 text-sm text-center"></p>
                         </div>
@@ -2424,7 +2447,7 @@
             id="client-alert-card">
             <!-- Alert Icon -->
             <div class="flex justify-center mb-4">
-                <div id="client-alert-icon" class="w-14 h-14 rounded-full flex items-center justify-center">
+                <div id="client-alert-icon" class="w-14 h-14 rounded-full flex items-center justify-center bg-amber-500/10 text-amber-500">
                     <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9">
@@ -2434,7 +2457,7 @@
             </div>
             <h3 class="text-lg font-bold text-white text-center mb-2" id="client-alert-title"></h3>
             <p class="text-sm text-gray-300 text-center mb-6 whitespace-pre-wrap" id="client-alert-message"></p>
-            <button onclick="dismissClientAlert()" class="w-full py-3 rounded-xl font-semibold text-sm transition-all"
+            <button onclick="dismissClientAlert()" class="w-full py-3 rounded-xl font-semibold text-sm transition-all ng-btn-primary"
                 id="client-alert-dismiss-btn">
                 OK, Got it
             </button>
@@ -2494,7 +2517,12 @@
         if (state.coupons) renderCoupons(state.coupons);
         if (state.redeemed) renderRedeemedCoupons(state.redeemed);
         if (state.history) renderHistory(state.history);
-        if (state.alerts) renderAlerts(state.alerts);
+        const alertIsActive = state.alerts && (state.alerts.active === true || state.alerts.active === 'true' || state.alerts.active === '1' || state.alerts.active === 1);
+        if (alertIsActive && state.alerts.message) {
+            renderAlerts(state.alerts);
+        } else {
+            checkActiveAlert();
+        }
 
         const loader = document.getElementById('initial-loader');
         if (loader) loader.classList.add('hidden');
@@ -3129,16 +3157,21 @@
     }
 
     function renderAlerts(alert) {
-        if (!alert || !alert.active) return;
-        const banner = document.getElementById('broadcast-banner');
-        if (banner) {
-            banner.classList.remove('hidden');
-            if (document.getElementById('broadcast-banner-title')) {
-                document.getElementById('broadcast-banner-title').textContent = alert.title || 'Announcement';
-            }
-            if (document.getElementById('broadcast-banner-msg')) {
-                document.getElementById('broadcast-banner-msg').textContent = alert.message || '';
-            }
+        if (!alert) return;
+        const isActive = (alert.active === true || alert.active === 'true' || alert.active === '1' || alert.active === 1);
+        if (!isActive || !alert.message) return;
+        const bTitle = alert.title || '';
+        const bMsg = alert.message || '';
+
+        const modal = document.getElementById('client-alert-modal');
+        if (modal) {
+            const mTitle = document.getElementById('client-alert-title');
+            const mMsg = document.getElementById('client-alert-message');
+            if (mTitle) mTitle.textContent = bTitle;
+            if (mMsg) mMsg.textContent = bMsg;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            modal.style.display = 'flex';
         }
     }
 
@@ -3473,9 +3506,29 @@
         }
     }
 
+    function openBuyCredits() {
+        switchUserTab('dashboard');
+        const content = document.getElementById('buy-credits-content');
+        const chevron = document.getElementById('buy-credits-chevron');
+        if (content) {
+            sectionStates['buy-credits'] = true;
+            content.style.maxHeight = '2500px';
+            content.style.paddingTop = '1rem';
+            content.style.paddingBottom = '1.5rem';
+            chevron?.classList.remove('rotate-180');
+            const buyCard = content.closest('.ng-card') || content;
+            buyCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            buyCard.classList.add('ring-2', 'ring-amber-500');
+            setTimeout(() => buyCard.classList.remove('ring-2', 'ring-amber-500'), 1800);
+            showToast('Choose your credit quantity below to add credits instantly!', 'info');
+        }
+    }
+
     function updateLaunchButton() {
         const btn = document.getElementById('launch-btn');
         const btnText = document.getElementById('launch-btn-text');
+        const btnIcon = document.getElementById('launch-btn-icon');
+        const hint = document.getElementById('insufficient-credits-hint');
         if (!btn || !btnText) return;
 
         const regionSelect = document.getElementById('region-select') || document.querySelector('select[name="region"]');
@@ -3486,16 +3539,32 @@
         const tier = (reg?.tier || 'basic').toLowerCase();
         const isPremium = (tier === 'premium');
         const tierLabel = isPremium ? 'Premium' : 'Basic';
-        const userCredits = (currentUser?.basic_credits || 0) + (isPremium ? (currentUser?.premium_credits || 0) : 0);
+        const userCredits = isPremium ? (currentUser?.premium_credits || 0) : (currentUser?.basic_credits || 0);
 
         if (userCredits < 1) {
-            btn.disabled = true;
-            btn.classList.add('opacity-50', 'cursor-not-allowed');
-            btnText.textContent = `Insufficient Credits (Need 1, Have ${currentUser?.basic_credits || 0})`;
+            btn.disabled = false;
+            btn.type = 'button';
+            btn.className = 'w-full py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all bg-gradient-to-r from-amber-600/35 via-amber-500/30 to-amber-600/35 hover:from-amber-500/45 hover:to-amber-500/45 text-amber-300 border border-amber-500/50 shadow-lg shadow-amber-950/30 cursor-pointer animate-pulse';
+            btnText.innerHTML = `<span>➕ Add Credits (Insufficient: Need 1, Have ${userCredits})</span>`;
+            if (btnIcon) {
+                btnIcon.innerHTML = `<svg class="w-5 h-5 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`;
+            }
+            btn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openBuyCredits();
+            };
+            if (hint) hint.classList.remove('hidden');
         } else {
             btn.disabled = false;
-            btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            btnText.textContent = `Start Group (1 Credit)`;
+            btn.type = 'submit';
+            btn.className = 'w-full ng-btn-success py-3.5 font-semibold flex items-center justify-center gap-2 cursor-pointer transition-all';
+            btnText.textContent = `Start Group (1 ${tierLabel} Credit)`;
+            if (btnIcon) {
+                btnIcon.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>`;
+            }
+            btn.onclick = null;
+            if (hint) hint.classList.add('hidden');
         }
     }
 
@@ -3639,7 +3708,8 @@
                 }
 
                 startFamGatewayPolling(data.order_id);
-                showToast(`FamGateway Order created for ₹${data.amount_inr}!`, 'success');
+                startQrCountdown(600); // 10 minutes QR validity
+                showToast(`FamGateway Order created for ₹${data.amount_inr}! (Valid 10 mins)`, 'success');
 
                 stepSec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             } else {
@@ -3655,6 +3725,48 @@
         }
     }
 
+    let famgatewayTimerInterval = null;
+    let famgatewaySecondsLeft = 600; // 10 minutes
+
+    function startQrCountdown(seconds = 600) {
+        if (famgatewayTimerInterval) clearInterval(famgatewayTimerInterval);
+        famgatewaySecondsLeft = seconds;
+
+        const timerEl = document.getElementById('fg-qr-timer');
+        const overlay = document.getElementById('fg-qr-expired-overlay');
+        const timerBox = document.getElementById('fg-qr-timer-box');
+        if (overlay) overlay.classList.add('hidden');
+        if (timerBox) timerBox.className = 'inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold';
+
+        const updateDisplay = () => {
+            const m = Math.floor(famgatewaySecondsLeft / 60);
+            const s = famgatewaySecondsLeft % 60;
+            if (timerEl) {
+                timerEl.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            }
+        };
+        updateDisplay();
+
+        famgatewayTimerInterval = setInterval(() => {
+            famgatewaySecondsLeft--;
+            if (famgatewaySecondsLeft <= 0) {
+                clearInterval(famgatewayTimerInterval);
+                famgatewayTimerInterval = null;
+                if (famgatewayPollInterval) {
+                    clearInterval(famgatewayPollInterval);
+                    famgatewayPollInterval = null;
+                }
+                if (timerEl) timerEl.textContent = '00:00';
+                if (overlay) overlay.classList.remove('hidden');
+                if (timerBox) timerBox.className = 'inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-red-500/15 border border-red-500/40 text-red-400 text-xs font-semibold';
+                const pollText = document.getElementById('fg-polling-text');
+                if (pollText) pollText.textContent = '⚠️ QR code expired after 10 mins. Click "Generate New QR" to continue.';
+            } else {
+                updateDisplay();
+            }
+        }, 1000);
+    }
+
     function startFamGatewayPolling(orderId) {
         if (famgatewayPollInterval) clearInterval(famgatewayPollInterval);
 
@@ -3666,6 +3778,10 @@
                 if (data.paid || data.status === 'success') {
                     clearInterval(famgatewayPollInterval);
                     famgatewayPollInterval = null;
+                    if (famgatewayTimerInterval) {
+                        clearInterval(famgatewayTimerInterval);
+                        famgatewayTimerInterval = null;
+                    }
 
                     const pollBox = document.getElementById('fg-polling-box');
                     const pollText = document.getElementById('fg-polling-text');
@@ -3747,7 +3863,8 @@
         const userCredits = isPremium ? (currentUser?.premium_credits || 0) : (currentUser?.basic_credits || 0);
 
         if (userCredits < 1) {
-            showToast(`Insufficient ${tierLabel} Credits! Please buy credits from the Buy Credits section.`, 'error');
+            openBuyCredits();
+            showToast(`Insufficient ${tierLabel} Credits! Please choose credits below to add instantly.`, 'error');
             return;
         }
 
@@ -4397,15 +4514,11 @@
 
     async function checkActiveAlert() {
         try {
-            const res = await fetch(API.alerts);
-            const alertData = await res.json();
-            if (alertData && alertData.active) {
-                const modal = document.getElementById('client-alert-modal');
-                if (modal) {
-                    document.getElementById('client-alert-title').textContent = alertData.title;
-                    document.getElementById('client-alert-message').textContent = alertData.message;
-                    modal.classList.remove('hidden');
-                    modal.classList.add('flex');
+            const res = await fetch(API.alerts + '?_t=' + Date.now(), { cache: 'no-store' });
+            if (res.ok) {
+                const alertData = await res.json();
+                if (alertData && (alertData.active === true || alertData.active === 'true' || alertData.active === '1' || alertData.active === 1)) {
+                    renderAlerts(alertData);
                 }
             }
         } catch (e) {}
@@ -4416,6 +4529,7 @@
         if (modal) {
             modal.classList.add('hidden');
             modal.classList.remove('flex');
+            modal.style.display = 'none';
         }
     }
 
@@ -4446,10 +4560,12 @@
             try {
                 const state = decodePayload(window.__INITIAL_SYNC__);
                 hydrateDashboardState(state);
-                return;
             } catch(e) {}
+        } else {
+            initUserDashboard();
         }
-        initUserDashboard();
+        // Always trigger broadcast check on every page refresh/load
+        checkActiveAlert();
     });
 
     </script>
