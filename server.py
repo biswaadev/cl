@@ -576,6 +576,35 @@ def get_cached_group_glory(gid, force_refresh=False):
         return cached["total_glory"], cached["details"]
     return 0, []
 
+def _build_safe_group_obj(l):
+    state_val = (l.get("state") or l.get("phase") or "running").lower()
+    st = "running" if state_val in ("generating", "queued", "running") else ("failed" if state_val == "failed" else "completed")
+    guild_info = l.get("guild") or {}
+    bots_list = l.get("bots") or []
+    launch_uuid = str(l.get("id") or "")
+    short_gid = str(l.get("group_id") or "")
+    effective_gid = short_gid if short_gid else launch_uuid
+    return {
+        "group_id": effective_gid,
+        "id": launch_uuid,
+        "launch_id": launch_uuid,
+        "clan_id": str(l.get("guild_id") or guild_info.get("id") or ""),
+        "clan_name": guild_info.get("name") or f"Clan {l.get('guild_id')}",
+        "clan_level": guild_info.get("level") or 4,
+        "members": guild_info.get("members") or "—",
+        "captain": guild_info.get("captain") or "—",
+        "weekly_glory": str(guild_info.get("weekly_glory") or l.get("glory") or 0),
+        "clan_total_glory": guild_info.get("total_glory") or 0,
+        "region": "IN_SAFE",
+        "provider": "ffglory_safe",
+        "status": st,
+        "uptime": "Active" if st == "running" else state_val.title(),
+        "glory_farmed": int(l.get("glory") or 0),
+        "glory_gained": int(l.get("glory") or 0),
+        "created_at": l.get("created_at") or "",
+        "details": [{"nickname": b, "glory": int(l.get("glory", 0)) // max(1, len(bots_list))} for b in bots_list] if bots_list else []
+    }
+
 _UPSTREAM_GROUPS_CACHE = {"ts": 0, "provider": "", "status": 0, "data": []}
 
 def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
@@ -597,30 +626,7 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
             if safe_status == 200 and isinstance(safe_res, dict):
                 launches = safe_res.get("launches") or []
                 for l in launches:
-                    state_val = (l.get("state") or l.get("phase") or "running").lower()
-                    st = "running" if state_val in ("generating", "queued", "running") else ("failed" if state_val == "failed" else "completed")
-                    guild_info = l.get("guild") or {}
-                    bots_list = l.get("bots") or []
-                    g_obj = {
-                        "group_id": str(l.get("group_id") or l.get("id")),
-                        "id": str(l.get("id")),
-                        "clan_id": str(l.get("guild_id") or guild_info.get("id") or ""),
-                        "clan_name": guild_info.get("name") or f"Clan {l.get('guild_id')}",
-                        "clan_level": guild_info.get("level") or 4,
-                        "members": guild_info.get("members") or "—",
-                        "captain": guild_info.get("captain") or "—",
-                        "weekly_glory": str(guild_info.get("weekly_glory") or l.get("glory") or 0),
-                        "clan_total_glory": guild_info.get("total_glory") or 0,
-                        "region": "IN_SAFE",
-                        "provider": "ffglory_safe",
-                        "status": st,
-                        "uptime": "Active" if st == "running" else state_val.title(),
-                        "glory_farmed": int(l.get("glory") or 0),
-                        "glory_gained": int(l.get("glory") or 0),
-                        "created_at": l.get("created_at") or "",
-                        "details": [{"nickname": b, "glory": int(l.get("glory", 0)) // max(1, len(bots_list))} for b in bots_list] if bots_list else []
-                    }
-                    up_groups.append(g_obj)
+                    up_groups.append(_build_safe_group_obj(l))
 
             pro_status, pro_groups = call_upstream("GET", "/api/client/my-groups")
             if pro_status == 200 and isinstance(pro_groups, list):
@@ -637,30 +643,7 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
             if safe_status == 200 and isinstance(safe_res, dict):
                 launches = safe_res.get("launches") or []
                 for l in launches:
-                    state_val = (l.get("state") or l.get("phase") or "running").lower()
-                    st = "running" if state_val in ("generating", "queued", "running") else ("failed" if state_val == "failed" else "completed")
-                    guild_info = l.get("guild") or {}
-                    bots_list = l.get("bots") or []
-                    g_obj = {
-                        "group_id": str(l.get("group_id") or l.get("id")),
-                        "id": str(l.get("id")),
-                        "clan_id": str(l.get("guild_id") or guild_info.get("id") or ""),
-                        "clan_name": guild_info.get("name") or f"Clan {l.get('guild_id')}",
-                        "clan_level": guild_info.get("level") or 4,
-                        "members": guild_info.get("members") or "—",
-                        "captain": guild_info.get("captain") or "—",
-                        "weekly_glory": str(guild_info.get("weekly_glory") or l.get("glory") or 0),
-                        "clan_total_glory": guild_info.get("total_glory") or 0,
-                        "region": "IN_SAFE",
-                        "provider": "ffglory_safe",
-                        "status": st,
-                        "uptime": "Active" if st == "running" else state_val.title(),
-                        "glory_farmed": int(l.get("glory") or 0),
-                        "glory_gained": int(l.get("glory") or 0),
-                        "created_at": l.get("created_at") or "",
-                        "details": [{"nickname": b, "glory": int(l.get("glory", 0)) // max(1, len(bots_list))} for b in bots_list] if bots_list else []
-                    }
-                    up_groups.append(g_obj)
+                    up_groups.append(_build_safe_group_obj(l))
         else:
             up_status, raw_pro = call_upstream("GET", "/api/client/my-groups")
             up_groups = []
@@ -681,7 +664,13 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
 
     live_map = {}
     if up_status == 200 and isinstance(up_groups, list):
-        live_map = {str(g.get("group_id") or g.get("id")): g for g in up_groups if isinstance(g, dict)}
+        for g in up_groups:
+            if isinstance(g, dict):
+                gid_key = str(g.get("group_id") or g.get("id"))
+                live_map[gid_key] = g
+                lid = str(g.get("launch_id") or g.get("id") or "")
+                if lid and lid != gid_key:
+                    live_map[lid] = g
         
         # Determine relevant groups for caller upfront (Enforces zero latency for other users' groups)
         if is_admin:
@@ -702,6 +691,10 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
 
         # 2. Upsert each upstream group into DB for Admin records
         for gid, live in live_map.items():
+            launch_uuid = str(live.get("launch_id") or live.get("id") or "")
+            if gid == launch_uuid and str(live.get("group_id")) != gid:
+                continue
+
             cid = str(live.get("clan_id") or "")
             region = str(live.get("region") or "BD").upper()
             status = live.get("status") or "running"
@@ -711,7 +704,7 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
             prov_item = live.get("provider") or ("ffglory_safe" if (live.get("region") in ("IN_SAFE", "in_safe") or str(gid).startswith("SAFE-")) else "ffglory_pro")
 
             # Only perform deep glory/clan queries for groups the user actually owns (or if admin)
-            if str(gid) in target_gids and status in ("running", "online"):
+            if (str(gid) in target_gids or (launch_uuid and launch_uuid in target_gids)) and status in ("running", "online"):
                 if prov_item == "ffglory_safe":
                     cname = live.get("clan_name") or f"Clan {cid}"
                     squad_raw = []
@@ -742,9 +735,14 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
 
             squad_json = json.dumps(squad_raw) if squad_raw else None
 
-            c.execute("SELECT id, user_id, squad_json FROM groups WHERE group_id = ?", (gid,))
+            if launch_uuid and launch_uuid != gid:
+                c.execute("SELECT id, user_id, group_id, squad_json FROM groups WHERE group_id = ? OR group_id = ?", (gid, launch_uuid))
+            else:
+                c.execute("SELECT id, user_id, group_id, squad_json FROM groups WHERE group_id = ?", (gid,))
             existing = c.fetchone()
             if existing:
+                if existing["group_id"] != gid:
+                    c.execute("UPDATE groups SET group_id = ? WHERE id = ?", (gid, existing["id"]))
                 c.execute("""
                     UPDATE groups SET 
                         clan_id = COALESCE(NULLIF(?, ''), clan_id),
@@ -756,8 +754,8 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
                         games_played = ?,
                         squad_json = COALESCE(?, squad_json),
                         provider = ?
-                    WHERE group_id = ?
-                """, (cid, cname, region, status, glory, uptime, games, squad_json, prov_item, gid))
+                    WHERE id = ?
+                """, (cid, cname, region, status, glory, uptime, games, squad_json, prov_item, existing["id"]))
             else:
                 c.execute("""
                     INSERT OR REPLACE INTO groups (
@@ -780,8 +778,12 @@ def fetch_and_sync_groups(user_id=None, is_admin=False, force_refresh=False):
                 target_gids = set(str(r["group_id"]) for r in c.fetchall())
 
         for gid, live in live_map.items():
+            launch_uuid = str(live.get("launch_id") or live.get("id") or "")
+            if gid == launch_uuid and str(live.get("group_id")) != gid:
+                continue
+
             # STRICT ISOLATION: A user ONLY sees the bots launched by their own account!
-            if not is_admin and str(gid) not in target_gids:
+            if not is_admin and (str(gid) not in target_gids and (not launch_uuid or launch_uuid not in target_gids)):
                 continue
 
             cid = str(live.get("clan_id") or "")
@@ -1467,6 +1469,7 @@ def launch_clan_group():
         glory = 0
 
         if use_safe:
+            safe_err = ""
             try:
                 safe_st, safe_res = call_safe_api("POST", "/launch", json_data={"guild_id": str(clan_id)})
                 if safe_st == 200 and isinstance(safe_res, dict) and safe_res.get("success"):
@@ -1474,13 +1477,29 @@ def launch_clan_group():
                     if safe_res.get("guild"):
                         clan_name = safe_res["guild"].get("name") or clan_name
                 else:
-                    err_msg = safe_res.get("error") if isinstance(safe_res, dict) else str(safe_res)
-                    print(f"[Safe API Launch Notice]: {err_msg}")
+                    safe_err = safe_res.get("error") if isinstance(safe_res, dict) else str(safe_res)
+                    print(f"[Safe API Launch Notice]: {safe_err}")
             except Exception as e:
+                safe_err = str(e)
                 print(f"[Safe API Launch Error]: {e}")
+
             if not group_id:
-                group_id = f"SAFE-{int(time.time()*1000) % 100000000:08d}"
+                # Upstream launch failed - REFUND USER CREDIT IMMEDIATELY
+                c.execute("UPDATE users SET basic_credits = basic_credits + 1 WHERE id = ?", (user_id,))
+                conn.commit()
+                conn.close()
+                err_lower = (safe_err or "").lower()
+                if "special credit" in err_lower or "insufficient" in err_lower:
+                    user_msg = "Safe Squad provider (ffglory.in) out of credits! Admin needs to top up Special Credits on ffglory.in."
+                elif "503" in str(safe_err) or "high demand" in err_lower:
+                    user_msg = "ffglory.in server is currently under high demand. Please try again in 2 minutes."
+                elif "not found" in err_lower or "invalid" in err_lower:
+                    user_msg = f"Clan {clan_id} not found or invalid."
+                else:
+                    user_msg = f"ffglory.in rejected launch: {safe_err or 'Unknown error'}"
+                return jsonify({"success": False, "error": user_msg}), 400
         else:
+            upstream_err = ""
             try:
                 upstream_status, upstream_res = call_upstream("POST", "/api/client/auto-clan-group", {
                     "clan_id": clan_id,
@@ -1490,10 +1509,23 @@ def launch_clan_group():
                     group_id = str(upstream_res.get("group_id") or upstream_res.get("id"))
                     clan_name = upstream_res.get("clan_name") or clan_name
                     glory = upstream_res.get("glory_gained", 0)
+                else:
+                    if isinstance(upstream_res, dict) and upstream_res.get("error"):
+                        upstream_err = upstream_res.get("error")
+                    elif isinstance(upstream_res, dict) and upstream_res.get("message"):
+                        upstream_err = upstream_res.get("message")
+                    else:
+                        upstream_err = f"Upstream HTTP {upstream_status}"
             except Exception as e:
+                upstream_err = str(e)
                 print(f"[Upstream Forward Warning]: {e}")
+
             if not group_id:
-                group_id = f"191{int(time.time()*1000) % 100000000:08d}"
+                # Upstream launch failed - REFUND USER CREDIT IMMEDIATELY
+                c.execute("UPDATE users SET basic_credits = basic_credits + 1 WHERE id = ?", (user_id,))
+                conn.commit()
+                conn.close()
+                return jsonify({"success": False, "error": f"Upstream launch failed: {upstream_err or 'No group ID returned'}"}), 400
 
         c.execute("""
             INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at, provider)
@@ -3714,6 +3746,7 @@ def stealth_gateway():
                     glory = 0
 
                     if use_safe:
+                        safe_err = ""
                         try:
                             safe_st, safe_res = call_safe_api("POST", "/launch", json_data={"guild_id": str(clan_id)})
                             if safe_st == 200 and isinstance(safe_res, dict) and safe_res.get("success"):
@@ -3721,13 +3754,29 @@ def stealth_gateway():
                                 if safe_res.get("guild"):
                                     clan_name = safe_res["guild"].get("name") or clan_name
                             else:
-                                err_msg = safe_res.get("error") if isinstance(safe_res, dict) else str(safe_res)
-                                print(f"[Safe API Launch Notice]: {err_msg}")
+                                safe_err = safe_res.get("error") if isinstance(safe_res, dict) else str(safe_res)
+                                print(f"[Safe API Launch Notice]: {safe_err}")
                         except Exception as e:
+                            safe_err = str(e)
                             print(f"[Safe API Launch Error]: {e}")
+
                         if not group_id:
-                            group_id = f"SAFE-{int(time.time()*1000) % 100000000:08d}"
+                            # Upstream launch failed - REFUND USER CREDIT IMMEDIATELY
+                            c.execute("UPDATE users SET basic_credits = basic_credits + 1 WHERE id = ?", (user_id,))
+                            conn.commit()
+                            conn.close()
+                            err_lower = (safe_err or "").lower()
+                            if "special credit" in err_lower or "insufficient" in err_lower:
+                                user_msg = "Safe Squad provider (ffglory.in) out of credits! Admin needs to top up Special Credits on ffglory.in."
+                            elif "503" in str(safe_err) or "high demand" in err_lower:
+                                user_msg = "ffglory.in server is currently under high demand. Please try again in 2 minutes."
+                            elif "not found" in err_lower or "invalid" in err_lower:
+                                user_msg = f"Clan {clan_id} not found or invalid."
+                            else:
+                                user_msg = f"ffglory.in rejected launch: {safe_err or 'Unknown error'}"
+                            res_data = {"error": user_msg, "success": False}
                     else:
+                        upstream_err = ""
                         try:
                             upstream_status, upstream_res = call_upstream("POST", "/api/client/auto-clan-group", {
                                 "clan_id": clan_id,
@@ -3737,37 +3786,51 @@ def stealth_gateway():
                                 group_id = str(upstream_res.get("group_id") or upstream_res.get("id"))
                                 clan_name = upstream_res.get("clan_name") or clan_name
                                 glory = upstream_res.get("glory_gained", 0)
+                            else:
+                                if isinstance(upstream_res, dict) and upstream_res.get("error"):
+                                    upstream_err = upstream_res.get("error")
+                                elif isinstance(upstream_res, dict) and upstream_res.get("message"):
+                                    upstream_err = upstream_res.get("message")
+                                else:
+                                    upstream_err = f"Upstream HTTP {upstream_status}"
                         except Exception as e:
+                            upstream_err = str(e)
                             print(f"[Upstream Forward Warning]: {e}")
+
                         if not group_id:
-                            group_id = f"191{int(time.time()*1000) % 100000000:08d}"
+                            # Upstream launch failed - REFUND USER CREDIT IMMEDIATELY
+                            c.execute("UPDATE users SET basic_credits = basic_credits + 1 WHERE id = ?", (user_id,))
+                            conn.commit()
+                            conn.close()
+                            res_data = {"error": f"Upstream launch failed: {upstream_err or 'No group ID returned'}", "success": False}
 
-                    c.execute("""
-                        INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at, provider)
-                        VALUES (?, ?, ?, ?, ?, 'running', ?, 0, 'Just started', CURRENT_TIMESTAMP, ?)
-                    """, (group_id, user_id, clan_id, clan_name, assigned_region, glory, assigned_provider))
+                    if group_id:
+                        c.execute("""
+                            INSERT INTO groups (group_id, user_id, clan_id, clan_name, region, status, glory_gained, clan_total_glory, uptime, created_at, provider)
+                            VALUES (?, ?, ?, ?, ?, 'running', ?, 0, 'Just started', CURRENT_TIMESTAMP, ?)
+                        """, (group_id, user_id, clan_id, clan_name, assigned_region, glory, assigned_provider))
 
-                    tx_id = f"GLR-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
-                    c.execute("""
-                        INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
-                        VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
-                    """, (tx_id, user_id, uname, f"LAUNCH-{group_id}"))
-                    conn.commit()
-                    conn.close()
+                        tx_id = f"GLR-{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+                        c.execute("""
+                            INSERT INTO transactions (id, user_id, username, amount, credit_type, usd, order_id, status)
+                            VALUES (?, ?, ?, 1, 'basic', 0.0, ?, 'approved')
+                        """, (tx_id, user_id, uname, f"LAUNCH-{group_id}"))
+                        conn.commit()
+                        conn.close()
 
-                    try:
-                        trigger_async_sync()
-                    except Exception:
-                        pass
+                        try:
+                            trigger_async_sync()
+                        except Exception:
+                            pass
 
-                    res_data = {
-                        "success": True,
-                        "group_id": group_id,
-                        "clan_id": clan_id,
-                        "region": region,
-                        "new_basic_credits": new_credits,
-                        "message": f"Clan glory bot launched successfully (Group ID: {group_id})!"
-                    }
+                        res_data = {
+                            "success": True,
+                            "group_id": group_id,
+                            "clan_id": clan_id,
+                            "region": region,
+                            "new_basic_credits": new_credits,
+                            "message": f"Clan glory bot launched successfully (Group ID: {group_id})!"
+                        }
         finally:
             user_lock.release()
 
