@@ -584,6 +584,14 @@ def _build_safe_group_obj(l):
     launch_uuid = str(l.get("id") or "")
     short_gid = str(l.get("group_id") or "")
     effective_gid = short_gid if short_gid else launch_uuid
+    glory_int = 0
+    try:
+        raw_g = l.get("glory")
+        if raw_g is not None and str(raw_g).strip():
+            glory_int = int(raw_g)
+    except Exception:
+        glory_int = 0
+
     return {
         "group_id": effective_gid,
         "id": launch_uuid,
@@ -593,16 +601,16 @@ def _build_safe_group_obj(l):
         "clan_level": guild_info.get("level") or 4,
         "members": guild_info.get("members") or "—",
         "captain": guild_info.get("captain") or "—",
-        "weekly_glory": str(guild_info.get("weekly_glory") or l.get("glory") or 0),
+        "weekly_glory": str(guild_info.get("weekly_glory") or glory_int),
         "clan_total_glory": guild_info.get("total_glory") or 0,
         "region": "IN_SAFE",
         "provider": "ffglory_safe",
         "status": st,
         "uptime": "Active" if st == "running" else state_val.title(),
-        "glory_farmed": int(l.get("glory") or 0),
-        "glory_gained": int(l.get("glory") or 0),
+        "glory_farmed": glory_int,
+        "glory_gained": glory_int,
         "created_at": l.get("created_at") or "",
-        "details": [{"nickname": b, "glory": int(l.get("glory", 0)) // max(1, len(bots_list))} for b in bots_list] if bots_list else []
+        "details": [{"nickname": b, "glory": glory_int // max(1, len(bots_list))} for b in bots_list] if bots_list else []
     }
 
 _UPSTREAM_GROUPS_CACHE = {"ts": 0, "provider": "", "status": 0, "data": []}
@@ -979,7 +987,7 @@ def get_user_dashboard_state(user_id):
     price_inr = float(get_setting("famgateway_price_inr", get_setting("credit_price_inr", "120.0")))
     price_usd = float(get_setting("credit_price_usd", "1.50"))
 
-    regions = get_processed_regions()
+    regions = get_processed_regions(only_active=True)
 
     upstream_credits = get_cached_upstream_credits()
 
@@ -1116,12 +1124,12 @@ def serve_index():
             "redeemed": [],
             "history": [],
             "pricing": {
-                "credit_price_inr": 95,
-                "credit_price_usd": 1.7,
-                "regions": [r for r in DEFAULT_REGIONS if r.get("enabled")],
-                "upstream_credits": 0,
+                "credit_price_inr": float(get_setting("famgateway_price_inr", get_setting("credit_price_inr", "120.0"))),
+                "credit_price_usd": float(get_setting("credit_price_usd", "1.50")),
+                "regions": get_processed_regions(only_active=True),
+                "upstream_credits": get_cached_upstream_credits(),
                 "upstream_in_stock": True,
-                "global_maintenance": False
+                "global_maintenance": is_global_maintenance()
             },
             "alerts": {"active": False, "title": "", "message": ""}
         }
